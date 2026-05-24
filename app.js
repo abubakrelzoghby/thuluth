@@ -1,6 +1,6 @@
 /**
- * Iqraa Thuluth — Islamic Night Thirds Calculator
- * Phase 1: UI, Localization & Location | Phase 2: Prayer Times API | Phase 3: Night Calculation
+ * Thuluth Meeting — Multi-File PWA
+ * UI, localization, prayer times API, night calculation, dynamic manifest, service worker.
  */
 
 'use strict';
@@ -26,6 +26,7 @@ const STRINGS = {
     todayLabel: 'اليوم',
     tomorrowLabel: 'غداً',
     errorFetchFailed: 'تعذر تحميل أوقات الصلاة. تحقق من الاتصال وحاول مرة أخرى.',
+    errorOffline: 'أنت غير متصل بالإنترنت. التطبيق يعمل دون اتصال — أعد المحاولة عند عودة الشبكة.',
     errorInvalidLocation: 'لم يتم العثور على أوقات الصلاة لهذا الموقع. جرّب مدينة أخرى.',
     refreshPrayerTimes: 'تحديث الأوقات',
     prayerFajr: 'الفجر',
@@ -68,6 +69,7 @@ const STRINGS = {
     todayLabel: 'Today',
     tomorrowLabel: 'Tomorrow',
     errorFetchFailed: 'Could not load prayer times. Check your connection and try again.',
+    errorOffline: 'You are offline. The app shell works offline — retry when you are back online.',
     errorInvalidLocation: 'Prayer times not found for this location. Try another city.',
     refreshPrayerTimes: 'Refresh times',
     prayerFajr: 'Fajr',
@@ -101,6 +103,23 @@ const STORAGE_KEYS = {
   country: 'iqraa_country',
   city: 'iqraa_city',
   nightModeIsha: 'iqraa_night_isha',
+};
+
+// Localized Web App Manifest files (app.js switches href on language change)
+const MANIFEST_BY_LANG = {
+  ar: 'manifest.ar.json',
+  en: 'manifest.en.json',
+};
+
+const PWA_META = {
+  ar: {
+    appleTitle: 'ثلث الليل',
+    description: 'حساب ثلث الليل ونصف الليل الشرعي من أوقات الصلاة',
+  },
+  en: {
+    appleTitle: 'Night Calc',
+    description: 'Islamic night thirds and midnight from prayer times',
+  },
 };
 
 const API_BASE = 'https://api.aladhan.com/v1/timingsByCity';
@@ -272,7 +291,61 @@ function t(key) {
 }
 
 function getPrayerErrorMessage(errorKey) {
-  return errorKey === 'invalid' ? t('errorInvalidLocation') : t('errorFetchFailed');
+  if (errorKey === 'invalid') return t('errorInvalidLocation');
+  if (errorKey === 'offline') return t('errorOffline');
+  return t('errorFetchFailed');
+}
+
+// ---------------------------------------------------------------------------
+// PWA — dynamic manifest, service worker (native install prompt; no custom UI)
+// ---------------------------------------------------------------------------
+
+function getManifestHref(lang) {
+  const file = MANIFEST_BY_LANG[lang] || MANIFEST_BY_LANG.ar;
+  // Query param documents active locale for debugging and optional server routing
+  return `${file}?lang=${lang}`;
+}
+
+function updateWebManifest(lang) {
+  const href = getManifestHref(lang);
+  let link = document.getElementById('pwaManifest');
+
+  if (!link) {
+    link = document.createElement('link');
+    link.id = 'pwaManifest';
+    link.rel = 'manifest';
+    document.head.appendChild(link);
+  }
+
+  if (link.getAttribute('href') !== href) {
+    link.setAttribute('href', href);
+  }
+
+  const meta = PWA_META[lang] || PWA_META.ar;
+
+  const appleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+  if (appleTitle) {
+    appleTitle.setAttribute('content', meta.appleTitle);
+  }
+
+  const description = document.querySelector('meta[name="description"]');
+  if (description) {
+    description.setAttribute('content', meta.description);
+  }
+}
+
+function registerServiceWorker() {
+  if (!('serviceWorker' in navigator) || window.location.protocol === 'file:') {
+    return;
+  }
+
+  window.addEventListener('load', () => {
+    navigator.serviceWorker
+      .register('./sw.js', { scope: './' })
+      .catch((err) => {
+        console.warn('Service worker registration failed:', err);
+      });
+  });
 }
 
 function applyLanguage(lang) {
@@ -317,6 +390,7 @@ function applyLanguage(lang) {
   }
 
   updateNightModeUI();
+  updateWebManifest(lang);
 
   localStorage.setItem(STORAGE_KEYS.language, lang);
 }
@@ -657,6 +731,15 @@ async function fetchPrayerTimes() {
   showPrayerSection();
   setPrayerView('loading');
 
+  if (!navigator.onLine) {
+    state.prayerTimes.loading = false;
+    state.prayerTimes.errorKey = 'offline';
+    dom.prayerErrorMessage.textContent = getPrayerErrorMessage('offline');
+    setPrayerView('error');
+    fetchAbortController = null;
+    return;
+  }
+
   try {
     // Fetch today first (no date = city's local today). Tomorrow is derived from API date.
     const todayData = await fetchTimingsForDate(city, country, null, signal);
@@ -677,7 +760,10 @@ async function fetchPrayerTimes() {
     if (err.name === 'AbortError') return;
 
     state.prayerTimes.loading = false;
-    state.prayerTimes.errorKey = err.message === 'INVALID_RESPONSE' ? 'invalid' : 'fetch';
+    const isOffline = !navigator.onLine || err.message === 'Failed to fetch';
+    state.prayerTimes.errorKey = isOffline
+      ? 'offline'
+      : (err.message === 'INVALID_RESPONSE' ? 'invalid' : 'fetch');
 
     dom.prayerErrorMessage.textContent = getPrayerErrorMessage(state.prayerTimes.errorKey);
     setPrayerView('error');
@@ -879,12 +965,19 @@ function init() {
   const initialLang = savedLang === 'en' ? 'en' : 'ar';
   state.nightModeIsha = localStorage.getItem(STORAGE_KEYS.nightModeIsha) === '1';
 
+  registerServiceWorker();
   bindEvents();
   applyLanguage(initialLang);
   updateNightModeUI();
   restoreSavedLocation();
 
-  window.IqraaThuluth = {
+  window.addEventListener('online', () => {
+    if (state.prayerTimes.errorKey === 'offline' && state.country && state.city) {
+      fetchPrayerTimes();
+    }
+  });
+
+  window.ThuluthMeeting = {
     getLocation: () => ({
       country: state.country,
       city: state.city,
@@ -898,8 +991,12 @@ function init() {
     getState: () => ({ ...state }),
     fetchPrayerTimes,
     calculateAndRenderNight,
-    version: '1.2.0-phase3',
+    updateWebManifest,
+    version: '2.0.0-pwa',
   };
+
+  // Backward-compatible debug alias
+  window.IqraaThuluth = window.ThuluthMeeting;
 }
 
 document.addEventListener('DOMContentLoaded', init);
