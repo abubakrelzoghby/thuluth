@@ -105,22 +105,23 @@ const STORAGE_KEYS = {
   nightModeIsha: 'iqraa_night_isha',
 };
 
-// Localized Web App Manifest files (app.js switches href on language change)
-const MANIFEST_BY_LANG = {
-  ar: 'manifest.ar.json',
-  en: 'manifest.en.json',
-};
-
-const PWA_META = {
+// PWA install labels (home-screen name follows active UI language)
+const PWA_MANIFEST_STRINGS = {
   ar: {
-    appleTitle: 'ثلث الليل',
+    name: 'ثلث الليل',
+    short_name: 'ثلث الليل',
     description: 'حساب ثلث الليل ونصف الليل الشرعي من أوقات الصلاة',
+    appleTitle: 'ثلث الليل',
   },
   en: {
+    name: 'Night Calculator',
+    short_name: 'Night Calc',
+    description: 'Islamic night thirds and midnight calculated from prayer times',
     appleTitle: 'Night Calc',
-    description: 'Islamic night thirds and midnight from prayer times',
   },
 };
+
+let manifestBlobUrl = null;
 
 const API_BASE = 'https://api.aladhan.com/v1/timingsByCity';
 const PRAYER_KEYS = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
@@ -297,55 +298,92 @@ function getPrayerErrorMessage(errorKey) {
 }
 
 // ---------------------------------------------------------------------------
-// PWA — dynamic manifest, service worker (native install prompt; no custom UI)
+// PWA — dynamic manifest (blob), service worker (native install; no custom UI)
 // ---------------------------------------------------------------------------
 
-function getManifestHref(lang) {
-  const file = MANIFEST_BY_LANG[lang] || MANIFEST_BY_LANG.ar;
-  // Query param documents active locale for debugging and optional server routing
-  return `${file}?lang=${lang}`;
+/** Base path for deploy root or GitHub Pages subfolder (e.g. /thuluth/). */
+function getAppBasePath() {
+  const { pathname } = window.location;
+  if (pathname.endsWith('/')) return pathname;
+  const last = pathname.split('/').pop() || '';
+  if (last.includes('.')) {
+    return pathname.slice(0, pathname.lastIndexOf('/') + 1);
+  }
+  return `${pathname}/`;
+}
+
+function buildManifestObject(lang) {
+  const basePath = getAppBasePath();
+  const origin = window.location.origin;
+  const scope = `${origin}${basePath}`;
+  const labels = PWA_MANIFEST_STRINGS[lang] || PWA_MANIFEST_STRINGS.ar;
+
+  return {
+    id: scope,
+    name: labels.name,
+    short_name: labels.short_name,
+    description: labels.description,
+    lang,
+    dir: lang === 'ar' ? 'rtl' : 'ltr',
+    start_url: `${scope}index.html`,
+    scope,
+    display: 'standalone',
+    orientation: 'portrait-primary',
+    background_color: '#f0fdfa',
+    theme_color: '#0f766e',
+    icons: [
+      { src: `${scope}icons/icon-192.png`, sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: `${scope}icons/icon-512.png`, sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: `${scope}icons/icon-192.png`, sizes: '192x192', type: 'image/png', purpose: 'maskable' },
+      { src: `${scope}icons/icon-512.png`, sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+    ],
+  };
 }
 
 function updateWebManifest(lang) {
-  const href = getManifestHref(lang);
-  let link = document.getElementById('pwaManifest');
+  const manifest = buildManifestObject(lang);
 
+  if (manifestBlobUrl) {
+    URL.revokeObjectURL(manifestBlobUrl);
+  }
+
+  const blob = new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' });
+  manifestBlobUrl = URL.createObjectURL(blob);
+
+  let link = document.getElementById('pwaManifest');
   if (!link) {
     link = document.createElement('link');
     link.id = 'pwaManifest';
     link.rel = 'manifest';
     document.head.appendChild(link);
   }
+  link.href = manifestBlobUrl;
 
-  if (link.getAttribute('href') !== href) {
-    link.setAttribute('href', href);
-  }
-
-  const meta = PWA_META[lang] || PWA_META.ar;
+  const labels = PWA_MANIFEST_STRINGS[lang] || PWA_MANIFEST_STRINGS.ar;
 
   const appleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
   if (appleTitle) {
-    appleTitle.setAttribute('content', meta.appleTitle);
+    appleTitle.setAttribute('content', labels.appleTitle);
   }
 
   const description = document.querySelector('meta[name="description"]');
   if (description) {
-    description.setAttribute('content', meta.description);
+    description.setAttribute('content', labels.description);
   }
 }
 
-function registerServiceWorker() {
+async function registerServiceWorker() {
   if (!('serviceWorker' in navigator) || window.location.protocol === 'file:') {
     return;
   }
 
-  window.addEventListener('load', () => {
-    navigator.serviceWorker
-      .register('./sw.js', { scope: './' })
-      .catch((err) => {
-        console.warn('Service worker registration failed:', err);
-      });
-  });
+  const basePath = getAppBasePath();
+
+  try {
+    await navigator.serviceWorker.register(`${basePath}sw.js`, { scope: basePath });
+  } catch (err) {
+    console.warn('Service worker registration failed:', err);
+  }
 }
 
 function applyLanguage(lang) {
@@ -958,14 +996,15 @@ function bindEvents() {
   dom.nightModeToggle.addEventListener('click', toggleNightMode);
 }
 
-function init() {
+async function init() {
   cacheDom();
 
   const savedLang = localStorage.getItem(STORAGE_KEYS.language);
   const initialLang = savedLang === 'en' ? 'en' : 'ar';
   state.nightModeIsha = localStorage.getItem(STORAGE_KEYS.nightModeIsha) === '1';
 
-  registerServiceWorker();
+  updateWebManifest(initialLang);
+  await registerServiceWorker();
   bindEvents();
   applyLanguage(initialLang);
   updateNightModeUI();
@@ -992,7 +1031,8 @@ function init() {
     fetchPrayerTimes,
     calculateAndRenderNight,
     updateWebManifest,
-    version: '2.0.0-pwa',
+    getAppBasePath,
+    version: '2.0.1-pwa',
   };
 
   // Backward-compatible debug alias

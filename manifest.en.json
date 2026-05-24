@@ -1,4 +1,5 @@
 {
+  "id": "./",
   "name": "Night Calculator",
   "short_name": "Night Calc",
   "description": "Islamic night thirds and midnight calculated from prayer times",

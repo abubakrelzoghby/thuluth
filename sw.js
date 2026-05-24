@@ -1,21 +1,22 @@
 /**
  * Thuluth Meeting — Service Worker
- * App-shell caching for offline startup; network-first for API and CDN assets.
+ * Resilient precache + app-shell offline support.
  */
 
 'use strict';
 
-const CACHE_VERSION = 'thuluth-meeting-v2';
+const CACHE_VERSION = 'thuluth-meeting-v3';
+const SW_BASE = new URL('.', self.location.href).href;
+
 const PRECACHE_URLS = [
-  './',
-  './index.html',
-  './app.js',
-  './sw.js',
-  './manifest.json',
-  './manifest.ar.json',
-  './manifest.en.json',
-  './icons/icon-192.png',
-  './icons/icon-512.png',
+  SW_BASE,
+  `${SW_BASE}index.html`,
+  `${SW_BASE}app.js`,
+  `${SW_BASE}manifest.json`,
+  `${SW_BASE}manifest.ar.json`,
+  `${SW_BASE}manifest.en.json`,
+  `${SW_BASE}icons/icon-192.png`,
+  `${SW_BASE}icons/icon-512.png`,
 ];
 
 const FONT_STYLESHEET =
@@ -23,12 +24,22 @@ const FONT_STYLESHEET =
 
 const API_HOST = 'api.aladhan.com';
 
+async function precacheAll(cache) {
+  await Promise.allSettled(
+    PRECACHE_URLS.map((url) => cache.add(url))
+  );
+  try {
+    await cache.add(FONT_STYLESHEET);
+  } catch {
+    // Fonts are optional for offline shell
+  }
+}
+
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches
       .open(CACHE_VERSION)
-      .then((cache) => cache.addAll(PRECACHE_URLS))
-      .then(() => cache.add(FONT_STYLESHEET).catch(() => undefined))
+      .then((cache) => precacheAll(cache))
       .then(() => self.skipWaiting())
   );
 });
@@ -47,8 +58,10 @@ self.addEventListener('activate', (event) => {
 });
 
 function isNavigationRequest(request) {
-  return request.mode === 'navigate'
-    || (request.method === 'GET' && request.headers.get('accept')?.includes('text/html'));
+  return (
+    request.mode === 'navigate'
+    || (request.method === 'GET' && request.headers.get('accept')?.includes('text/html'))
+  );
 }
 
 function isApiRequest(url) {
@@ -56,7 +69,7 @@ function isApiRequest(url) {
 }
 
 function isSameOriginAppAsset(url, origin) {
-  return url.origin === origin && !url.pathname.endsWith('sw.js');
+  return url.origin === origin && !url.pathname.endsWith('/sw.js');
 }
 
 self.addEventListener('fetch', (event) => {
@@ -67,13 +80,11 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Prayer times API — network only (offline handled in app UI)
   if (isApiRequest(url)) {
     event.respondWith(fetch(request));
     return;
   }
 
-  // Google Fonts stylesheet — cache when available, refresh in background
   if (url.origin === 'https://fonts.googleapis.com') {
     event.respondWith(
       caches.open(CACHE_VERSION).then(async (cache) => {
@@ -92,7 +103,6 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Google Fonts files — stale-while-revalidate
   if (url.origin === 'https://fonts.gstatic.com') {
     event.respondWith(
       caches.open(CACHE_VERSION).then(async (cache) => {
@@ -111,36 +121,35 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Tailwind CDN — network first (large; optional at runtime)
   if (url.hostname === 'cdn.tailwindcss.com') {
-    event.respondWith(
-      fetch(request).catch(() => caches.match(request))
-    );
+    event.respondWith(fetch(request).catch(() => caches.match(request)));
     return;
   }
 
-  // HTML navigation — network first, fallback to cached shell
   if (isNavigationRequest(request)) {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_VERSION).then((cache) => cache.put('./index.html', copy));
+          if (response.ok) {
+            const copy = response.clone();
+            caches.open(CACHE_VERSION).then((cache) => {
+              cache.put(`${SW_BASE}index.html`, copy);
+            });
+          }
           return response;
         })
         .catch(async () => {
           const cache = await caches.open(CACHE_VERSION);
           return (
-            (await cache.match('./index.html'))
-            || (await cache.match('./'))
-            || (await cache.match('index.html'))
+            (await cache.match(`${SW_BASE}index.html`))
+            || (await cache.match(SW_BASE))
+            || (await cache.match(request))
           );
         })
     );
     return;
   }
 
-  // Same-origin static assets — cache first, then network
   if (isSameOriginAppAsset(url, self.location.origin)) {
     event.respondWith(
       caches.match(request).then((cached) => {
