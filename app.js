@@ -1,6 +1,6 @@
 /**
  * Thuluth Meeting — Multi-File PWA
- * UI, localization, prayer times API, night calculation, dynamic manifest, service worker.
+ * UI, localization, prayer times API, night calculation, static manifest switching, service worker.
  */
 
 'use strict';
@@ -136,7 +136,14 @@ const PWA_MANIFEST_STRINGS = {
   },
 };
 
-let manifestBlobUrl = null;
+/** Static manifest files — PWABuilder/TWA read these URLs directly (not blob URLs). */
+const MANIFEST_FILES = {
+  ar: 'manifest.json',
+  en: 'manifest.en.json',
+};
+
+const PWA_THEME_COLOR = '#0f766e';
+
 let deferredInstallPrompt = null;
 let installBannerDismissedThisSession = false;
 
@@ -427,43 +434,14 @@ function getAppBasePath() {
   return `${pathname}/`;
 }
 
-function buildManifestObject(lang) {
-  const basePath = getAppBasePath();
-  const origin = window.location.origin;
-  const scope = `${origin}${basePath}`;
-  const labels = PWA_MANIFEST_STRINGS[lang] || PWA_MANIFEST_STRINGS.ar;
-
-  return {
-    id: scope,
-    name: labels.name,
-    short_name: labels.short_name,
-    description: labels.description,
-    lang,
-    dir: lang === 'ar' ? 'rtl' : 'ltr',
-    start_url: `${scope}index.html`,
-    scope,
-    display: 'standalone',
-    orientation: 'portrait-primary',
-    background_color: '#f0fdfa',
-    theme_color: '#0f766e',
-    icons: [
-      { src: `${scope}icons/icon-192.png`, sizes: '192x192', type: 'image/png', purpose: 'any' },
-      { src: `${scope}icons/icon-512.png`, sizes: '512x512', type: 'image/png', purpose: 'any' },
-      { src: `${scope}icons/icon-192.png`, sizes: '192x192', type: 'image/png', purpose: 'maskable' },
-      { src: `${scope}icons/icon-512.png`, sizes: '512x512', type: 'image/png', purpose: 'maskable' },
-    ],
-  };
-}
-
+/**
+ * Point the manifest link at a static JSON file for the active language.
+ * Static files are required for PWABuilder validation and Google Play TWA packaging.
+ */
 function updateWebManifest(lang) {
-  const manifest = buildManifestObject(lang);
-
-  if (manifestBlobUrl) {
-    URL.revokeObjectURL(manifestBlobUrl);
-  }
-
-  const blob = new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' });
-  manifestBlobUrl = URL.createObjectURL(blob);
+  const basePath = getAppBasePath();
+  const manifestFile = MANIFEST_FILES[lang] || MANIFEST_FILES.ar;
+  const labels = PWA_MANIFEST_STRINGS[lang] || PWA_MANIFEST_STRINGS.ar;
 
   let link = document.getElementById('pwaManifest');
   if (!link) {
@@ -472,9 +450,7 @@ function updateWebManifest(lang) {
     link.rel = 'manifest';
     document.head.appendChild(link);
   }
-  link.href = manifestBlobUrl;
-
-  const labels = PWA_MANIFEST_STRINGS[lang] || PWA_MANIFEST_STRINGS.ar;
+  link.href = `${basePath}${manifestFile}`;
 
   const appleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
   if (appleTitle) {
@@ -484,6 +460,16 @@ function updateWebManifest(lang) {
   const description = document.querySelector('meta[name="description"]');
   if (description) {
     description.setAttribute('content', labels.description);
+  }
+
+  const themeColor = document.querySelector('meta[name="theme-color"]');
+  if (themeColor) {
+    themeColor.setAttribute('content', PWA_THEME_COLOR);
+  }
+
+  const tileColor = document.querySelector('meta[name="msapplication-TileColor"]');
+  if (tileColor) {
+    tileColor.setAttribute('content', PWA_THEME_COLOR);
   }
 }
 
@@ -632,10 +618,11 @@ function togglePrayerTimesAccordion() {
 function scrollToNightCalcSection() {
   if (!dom.nightCalcSection || dom.nightCalcSection.classList.contains('hidden')) return;
 
+  // Defer scroll until accordion layout settles — avoids jank on the main thread.
   requestAnimationFrame(() => {
-    setTimeout(() => {
+    requestAnimationFrame(() => {
       dom.nightCalcSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 150);
+    });
   });
 }
 
