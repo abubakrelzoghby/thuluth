@@ -20,6 +20,9 @@ const STRINGS = {
     citySearchPlaceholder: 'ابحث عن مدينتك...',
     cityHint: 'اختر مدينة من القائمة أدناه',
     selectedLocationLabel: 'الموقع المحدد',
+    locationEdit: 'تعديل',
+    showPrayerTimes: 'عرض مواقيت الصلاة',
+    hidePrayerTimes: 'إخفاء مواقيت الصلاة',
     prayerTimesTitle: 'أوقات الصلاة',
     loadingPrayerTimes: 'جاري تحميل أوقات الصلاة...',
     retryButton: 'إعادة المحاولة',
@@ -66,6 +69,9 @@ const STRINGS = {
     citySearchPlaceholder: 'Search for your city...',
     cityHint: 'Choose a city from the list below',
     selectedLocationLabel: 'Selected location',
+    locationEdit: 'Edit',
+    showPrayerTimes: 'Show Prayer Times',
+    hidePrayerTimes: 'Hide Prayer Times',
     prayerTimesTitle: 'Prayer Times',
     loadingPrayerTimes: 'Loading prayer times...',
     retryButton: 'Try again',
@@ -255,6 +261,9 @@ const state = {
   },
   nightModeIsha: false,
   nightCalc: null,
+  locationExpanded: true,
+  prayerTimesExpanded: false,
+  pendingScrollToNight: false,
 };
 
 let fetchAbortController = null;
@@ -273,9 +282,16 @@ function cacheDom() {
   dom.citySearch = document.getElementById('citySearch');
   dom.citySelect = document.getElementById('citySelect');
   dom.cityHint = document.getElementById('cityHint');
-  dom.selectedLocation = document.getElementById('selectedLocation');
-  dom.selectedLocationText = document.getElementById('selectedLocationText');
+  dom.locationSection = document.getElementById('locationSection');
+  dom.locationSummaryBtn = document.getElementById('locationSummaryBtn');
+  dom.locationSummaryText = document.getElementById('locationSummaryText');
+  dom.locationSummaryChevron = document.getElementById('locationSummaryChevron');
+  dom.locationBody = document.getElementById('locationBody');
   dom.prayerTimesSection = document.getElementById('prayerTimesSection');
+  dom.prayerTimesToggle = document.getElementById('prayerTimesToggle');
+  dom.prayerTimesToggleLabel = document.getElementById('prayerTimesToggleLabel');
+  dom.prayerTimesChevron = document.getElementById('prayerTimesChevron');
+  dom.prayerTimesBody = document.getElementById('prayerTimesBody');
   dom.prayerLoading = document.getElementById('prayerLoading');
   dom.prayerError = document.getElementById('prayerError');
   dom.prayerErrorMessage = document.getElementById('prayerErrorMessage');
@@ -510,7 +526,7 @@ function applyLanguage(lang) {
     populateCities(state.country);
   }
 
-  updateSelectedLocationDisplay();
+  updateLocationAccordion();
 
   if (state.prayerTimes.today) {
     renderPrayerTimes();
@@ -518,6 +534,8 @@ function applyLanguage(lang) {
   } else if (state.prayerTimes.errorKey && dom.prayerErrorMessage) {
     dom.prayerErrorMessage.textContent = getPrayerErrorMessage(state.prayerTimes.errorKey);
   }
+
+  updatePrayerTimesAccordion();
 
   if (dom.prayerRefreshBtn) {
     dom.prayerRefreshBtn.setAttribute('aria-label', t('refreshPrayerTimes'));
@@ -532,6 +550,96 @@ function applyLanguage(lang) {
 
 function toggleLanguage() {
   applyLanguage(state.lang === 'ar' ? 'en' : 'ar');
+}
+
+// ---------------------------------------------------------------------------
+// Collapsible sections & scroll
+// ---------------------------------------------------------------------------
+
+function hasCompleteLocation() {
+  return Boolean(state.country && state.city);
+}
+
+function getLocationSummaryText() {
+  if (!hasCompleteLocation()) return '';
+  return `${state.country} - ${state.city}`;
+}
+
+function updateLocationAccordion() {
+  if (!dom.locationBody) return;
+
+  const hasLocation = hasCompleteLocation();
+
+  if (!hasLocation) {
+    state.locationExpanded = true;
+  }
+
+  if (dom.locationSummaryText) {
+    dom.locationSummaryText.textContent = getLocationSummaryText();
+  }
+
+  const expanded = state.locationExpanded;
+
+  if (hasLocation && !expanded) {
+    dom.locationSummaryBtn?.classList.remove('hidden');
+    dom.locationBody.classList.remove('is-open');
+    dom.locationSummaryChevron?.classList.remove('is-open');
+    dom.locationSummaryBtn?.setAttribute('aria-expanded', 'false');
+  } else {
+    dom.locationSummaryBtn?.classList.add('hidden');
+    dom.locationBody.classList.add('is-open');
+    dom.locationSummaryChevron?.classList.add('is-open');
+    dom.locationSummaryBtn?.setAttribute('aria-expanded', 'true');
+  }
+}
+
+function setLocationExpanded(expanded) {
+  if (!hasCompleteLocation() && !expanded) return;
+  state.locationExpanded = expanded;
+  updateLocationAccordion();
+}
+
+function toggleLocationAccordion() {
+  if (!hasCompleteLocation()) return;
+  setLocationExpanded(!state.locationExpanded);
+}
+
+function updatePrayerTimesAccordion() {
+  if (!dom.prayerTimesBody) return;
+
+  const expanded = state.prayerTimesExpanded;
+  dom.prayerTimesBody.classList.toggle('is-open', expanded);
+  dom.prayerTimesChevron?.classList.toggle('is-open', expanded);
+  dom.prayerTimesToggle?.setAttribute('aria-expanded', String(expanded));
+
+  if (dom.prayerTimesToggleLabel) {
+    dom.prayerTimesToggleLabel.textContent = t(expanded ? 'hidePrayerTimes' : 'showPrayerTimes');
+  }
+}
+
+function setPrayerTimesExpanded(expanded) {
+  state.prayerTimesExpanded = expanded;
+  updatePrayerTimesAccordion();
+}
+
+function togglePrayerTimesAccordion() {
+  setPrayerTimesExpanded(!state.prayerTimesExpanded);
+}
+
+function scrollToNightCalcSection() {
+  if (!dom.nightCalcSection || dom.nightCalcSection.classList.contains('hidden')) return;
+
+  requestAnimationFrame(() => {
+    setTimeout(() => {
+      dom.nightCalcSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 150);
+  });
+}
+
+function maybeScrollToNightCalc() {
+  if (!state.pendingScrollToNight) return;
+  state.pendingScrollToNight = false;
+  scrollToNightCalcSection();
 }
 
 // ---------------------------------------------------------------------------
@@ -618,7 +726,7 @@ function onCountryChange() {
   state.city = '';
 
   dom.citySearch.value = '';
-  dom.selectedLocation.classList.add('hidden');
+  state.locationExpanded = true;
 
   if (!country) {
     showCityControls(false);
@@ -627,6 +735,7 @@ function onCountryChange() {
     clearPrayerTimes();
     localStorage.removeItem(STORAGE_KEYS.country);
     localStorage.removeItem(STORAGE_KEYS.city);
+    updateLocationAccordion();
     return;
   }
 
@@ -636,6 +745,7 @@ function onCountryChange() {
   populateCities(country);
   localStorage.setItem(STORAGE_KEYS.country, country);
   localStorage.removeItem(STORAGE_KEYS.city);
+  updateLocationAccordion();
 }
 
 function onCitySearchInput() {
@@ -644,7 +754,7 @@ function onCitySearchInput() {
   dom.citySelect.classList.remove('hidden');
 }
 
-function selectCity(city) {
+function selectCity(city, options = {}) {
   if (!city || !state.country) return;
 
   state.city = city;
@@ -652,24 +762,19 @@ function selectCity(city) {
   dom.citySearch.value = city;
 
   localStorage.setItem(STORAGE_KEYS.city, city);
-  updateSelectedLocationDisplay();
+
+  if (options.scrollOnLoad !== false) {
+    state.pendingScrollToNight = true;
+  }
+
+  state.locationExpanded = false;
+  updateLocationAccordion();
   fetchPrayerTimes();
 }
 
 function onCitySelectChange() {
   const city = dom.citySelect.value;
   if (city) selectCity(city);
-}
-
-function updateSelectedLocationDisplay() {
-  if (!state.country || !state.city) {
-    dom.selectedLocation.classList.add('hidden');
-    return;
-  }
-
-  const separator = state.lang === 'ar' ? '، ' : ', ';
-  dom.selectedLocationText.textContent = `${state.city}${separator}${state.country}`;
-  dom.selectedLocation.classList.remove('hidden');
 }
 
 function restoreSavedLocation() {
@@ -683,7 +788,7 @@ function restoreSavedLocation() {
     populateCities(savedCountry);
 
     if (savedCity && getCitiesForCountry(savedCountry).includes(savedCity)) {
-      selectCity(savedCity);
+      selectCity(savedCity, { scrollOnLoad: true });
     }
   }
 }
@@ -865,12 +970,15 @@ async function fetchPrayerTimes() {
   state.prayerTimes.errorKey = null;
   showPrayerSection();
   setPrayerView('loading');
+  state.prayerTimesExpanded = true;
+  updatePrayerTimesAccordion();
 
   if (!navigator.onLine) {
     state.prayerTimes.loading = false;
     state.prayerTimes.errorKey = 'offline';
     dom.prayerErrorMessage.textContent = getPrayerErrorMessage('offline');
     setPrayerView('error');
+    state.pendingScrollToNight = false;
     fetchAbortController = null;
     return;
   }
@@ -891,6 +999,9 @@ async function fetchPrayerTimes() {
 
     renderPrayerTimes();
     calculateAndRenderNight();
+    state.prayerTimesExpanded = false;
+    updatePrayerTimesAccordion();
+    maybeScrollToNightCalc();
   } catch (err) {
     if (err.name === 'AbortError') return;
 
@@ -902,6 +1013,9 @@ async function fetchPrayerTimes() {
 
     dom.prayerErrorMessage.textContent = getPrayerErrorMessage(state.prayerTimes.errorKey);
     setPrayerView('error');
+    state.pendingScrollToNight = false;
+    state.prayerTimesExpanded = true;
+    updatePrayerTimesAccordion();
   } finally {
     if (!signal.aborted) {
       fetchAbortController = null;
@@ -1089,7 +1203,12 @@ function bindEvents() {
   });
 
   dom.prayerRetryBtn.addEventListener('click', fetchPrayerTimes);
-  dom.prayerRefreshBtn.addEventListener('click', fetchPrayerTimes);
+  dom.prayerRefreshBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    fetchPrayerTimes();
+  });
+  dom.prayerTimesToggle?.addEventListener('click', togglePrayerTimesAccordion);
+  dom.locationSummaryBtn?.addEventListener('click', toggleLocationAccordion);
   dom.nightModeToggle.addEventListener('click', toggleNightMode);
 
   if (dom.installAppBtn) {
@@ -1113,6 +1232,8 @@ async function init() {
   bindEvents();
   applyLanguage(initialLang);
   updateNightModeUI();
+  updateLocationAccordion();
+  updatePrayerTimesAccordion();
   restoreSavedLocation();
 
   window.addEventListener('online', () => {
