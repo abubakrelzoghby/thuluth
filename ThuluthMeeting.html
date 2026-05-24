@@ -1,0 +1,1502 @@
+<!DOCTYPE html>
+<!-- Thuluth Meeting — standalone PWA single-file build (all logic inlined). Multi-file version: index.html + app.js -->
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="description" content="Calculate Islamic night thirds (Thuluth) and midnight based on prayer times">
+  <meta name="theme-color" content="#0f766e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="ثلث الليل">
+  <title>اجتماع الثلث | Thuluth Meeting</title>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            arabic: ['Cairo', 'sans-serif'],
+            english: ['Inter', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              50: '#f0fdfa',
+              100: '#ccfbf1',
+              200: '#99f6e4',
+              300: '#5eead4',
+              400: '#2dd4bf',
+              500: '#14b8a6',
+              600: '#0d9488',
+              700: '#0f766e',
+              800: '#115e59',
+              900: '#134e4a',
+            },
+          },
+          boxShadow: {
+            card: '0 4px 24px -4px rgba(15, 118, 110, 0.12)',
+            soft: '0 2px 12px -2px rgba(0, 0, 0, 0.08)',
+          },
+        },
+      },
+    };
+  </script>
+
+  <style>
+    html {
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      font-family: 'Cairo', sans-serif;
+    }
+
+    select,
+    input[type="search"] {
+      appearance: none;
+      -webkit-appearance: none;
+    }
+
+    .select-field {
+      background-image: none;
+    }
+
+    #citySelect {
+      background-image: none;
+    }
+
+    html[dir="ltr"] body {
+      font-family: 'Inter', sans-serif;
+    }
+
+    #citySelect option {
+      padding: 0.5rem;
+    }
+
+    #citySelect:not(.hidden) {
+      display: block;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .spinner {
+      animation: spin 0.7s linear infinite;
+    }
+
+  /* Night mode toggle switch */
+  .toggle-track {
+    transition: background-color 0.2s ease;
+  }
+
+  .toggle-track[data-on="true"] {
+    background-color: #0f766e;
+  }
+
+  .toggle-track[data-on="false"] {
+    background-color: #cbd5e1;
+  }
+
+  .toggle-thumb {
+    transition: transform 0.2s ease;
+  }
+
+  html[dir="rtl"] .toggle-track[data-on="true"] .toggle-thumb {
+    transform: translateX(-1.25rem);
+  }
+
+  html[dir="ltr"] .toggle-track[data-on="true"] .toggle-thumb {
+    transform: translateX(1.25rem);
+  }
+  </style>
+</head>
+<body class="min-h-screen bg-gradient-to-b from-brand-50 via-white to-brand-50/30 text-slate-800 antialiased">
+
+  <div id="app" class="mx-auto flex min-h-screen max-w-md flex-col px-4 pb-8 pt-[max(1rem,env(safe-area-inset-top))]">
+
+    <!-- Header -->
+    <header class="mb-6 flex items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-brand-700 text-white shadow-soft">
+          <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+          </svg>
+        </div>
+        <div>
+          <h1 class="text-lg font-bold leading-tight text-brand-900" data-i18n="appTitle">اجتماع الثلث</h1>
+          <p class="text-xs text-slate-500" data-i18n="appSubtitle">حساب ثلث الليل ونصف الليل</p>
+        </div>
+      </div>
+
+      <button
+        id="langToggle"
+        type="button"
+        class="flex h-11 min-w-[4.5rem] shrink-0 items-center justify-center rounded-xl border border-brand-200 bg-white px-3 text-sm font-semibold text-brand-800 shadow-soft transition active:scale-95"
+        aria-label="Toggle language"
+      >
+        <span id="langToggleLabel">EN</span>
+      </button>
+    </header>
+
+    <!-- PWA Install Banner (shown when installable or on iOS Safari) -->
+    <div
+      id="installBanner"
+      class="mb-4 hidden"
+      role="region"
+      aria-labelledby="installBannerTitle"
+    >
+      <div class="flex items-center gap-3 rounded-2xl border border-brand-200 bg-white/95 p-3.5 shadow-card backdrop-blur-sm">
+        <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-700 text-white shadow-soft" aria-hidden="true">
+          <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+          </svg>
+        </div>
+        <div class="min-w-0 flex-1">
+          <p id="installBannerTitle" class="text-sm font-semibold leading-snug text-brand-900" data-i18n="installTitle">ثبّت التطبيق على جهازك</p>
+          <p id="installIosHint" class="mt-0.5 hidden text-xs leading-relaxed text-slate-500" data-i18n="installIosHint">اضغط «مشاركة» ثم «إضافة إلى الشاشة الرئيسية»</p>
+        </div>
+        <button
+          id="installAppBtn"
+          type="button"
+          class="shrink-0 rounded-xl bg-brand-700 px-3 py-2 text-xs font-semibold text-white shadow-soft transition hover:bg-brand-800 active:scale-95"
+          data-i18n="installApp"
+        >
+          تثبيت التطبيق
+        </button>
+        <button
+          id="installDismissBtn"
+          type="button"
+          class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+          aria-label="Dismiss install banner"
+        >
+          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Location Card -->
+    <section class="mb-5 rounded-2xl border border-brand-100 bg-white p-5 shadow-card" aria-labelledby="locationHeading">
+      <div class="mb-4 flex items-center gap-2">
+        <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-100 text-brand-700">
+          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+          </svg>
+        </div>
+        <h2 id="locationHeading" class="text-base font-semibold text-brand-900" data-i18n="locationTitle">اختر موقعك</h2>
+      </div>
+
+      <!-- Country -->
+      <div class="mb-4">
+        <label for="countrySelect" class="mb-1.5 block text-sm font-medium text-slate-600" data-i18n="countryLabel">الدولة</label>
+        <div class="relative">
+          <select
+            id="countrySelect"
+            class="select-field w-full rounded-xl border border-slate-200 bg-slate-50 py-3 ps-4 pe-10 text-sm font-medium text-slate-800 outline-none transition focus:border-brand-400 focus:bg-white focus:ring-2 focus:ring-brand-200"
+          >
+            <option value="" data-i18n="countryPlaceholder">— اختر الدولة —</option>
+          </select>
+          <svg class="pointer-events-none absolute end-3 top-1/2 h-5 w-5 -translate-y-1/2 text-brand-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+          </svg>
+        </div>
+      </div>
+
+      <!-- City Search -->
+      <div class="mb-1">
+        <label for="citySearch" class="mb-1.5 block text-sm font-medium text-slate-600" data-i18n="cityLabel">المدينة</label>
+        <div class="relative">
+          <input
+            type="search"
+            id="citySearch"
+            disabled
+            autocomplete="off"
+            class="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 ps-10 pe-4 text-sm font-medium text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-brand-400 focus:bg-white focus:ring-2 focus:ring-brand-200 disabled:cursor-not-allowed disabled:opacity-50"
+            placeholder="ابحث عن مدينتك..."
+          />
+          <svg class="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+          </svg>
+        </div>
+      </div>
+
+      <!-- City List (searchable via filter) -->
+      <select
+        id="citySelect"
+        disabled
+        size="6"
+        class="mt-2 hidden w-full rounded-xl border border-slate-200 bg-white px-3 py-1 text-sm font-medium text-slate-800 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-200"
+        aria-label="City list"
+      ></select>
+
+      <p id="cityHint" class="mt-2 hidden text-xs text-slate-500" data-i18n="cityHint">اختر مدينة من القائمة أدناه</p>
+
+      <!-- Selected Location -->
+      <div id="selectedLocation" class="mt-4 hidden rounded-xl bg-brand-50 px-4 py-3">
+        <p class="text-xs font-medium text-brand-600" data-i18n="selectedLocationLabel">الموقع المحدد</p>
+        <p id="selectedLocationText" class="mt-0.5 text-sm font-semibold text-brand-900"></p>
+      </div>
+    </section>
+
+    <!-- Prayer Times (Phase 2) -->
+    <section
+      id="prayerTimesSection"
+      class="mb-5 hidden rounded-2xl border border-brand-100 bg-white p-5 shadow-card"
+      aria-labelledby="prayerTimesHeading"
+      aria-live="polite"
+    >
+      <div class="mb-4 flex items-center justify-between gap-2">
+        <div class="flex items-center gap-2">
+          <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-100 text-brand-700">
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+          </div>
+          <h2 id="prayerTimesHeading" class="text-base font-semibold text-brand-900" data-i18n="prayerTimesTitle">أوقات الصلاة</h2>
+        </div>
+        <button
+          id="prayerRefreshBtn"
+          type="button"
+          class="hidden h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-brand-200 text-brand-700 transition hover:bg-brand-50 active:scale-95"
+          aria-label="Refresh prayer times"
+        >
+          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Loading -->
+      <div id="prayerLoading" class="hidden flex flex-col items-center justify-center gap-3 py-8">
+        <div class="spinner h-9 w-9 rounded-full border-[3px] border-brand-200 border-t-brand-600" role="status" aria-hidden="true"></div>
+        <p class="text-sm font-medium text-slate-500" data-i18n="loadingPrayerTimes">جاري تحميل أوقات الصلاة...</p>
+      </div>
+
+      <!-- Error -->
+      <div id="prayerError" class="hidden rounded-xl border border-red-100 bg-red-50 p-4 text-center">
+        <p id="prayerErrorMessage" class="text-sm font-medium text-red-700"></p>
+        <button
+          id="prayerRetryBtn"
+          type="button"
+          class="mt-3 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition active:scale-95 hover:bg-red-700"
+          data-i18n="retryButton"
+        >
+          إعادة المحاولة
+        </button>
+      </div>
+
+      <!-- Prayer Times Data -->
+      <div id="prayerData" class="hidden space-y-4">
+        <div id="todayPrayers"></div>
+        <div id="tomorrowPrayers"></div>
+      </div>
+    </section>
+
+    <!-- Night Calculation (Phase 3) -->
+    <section
+      id="nightCalcSection"
+      class="mb-5 hidden rounded-2xl border border-brand-100 bg-white p-5 shadow-card"
+      aria-labelledby="nightCalcHeading"
+    >
+      <div class="mb-4 flex items-center gap-2">
+        <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-100 text-brand-700">
+          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+          </svg>
+        </div>
+        <h2 id="nightCalcHeading" class="text-base font-semibold text-brand-900" data-i18n="nightCalcTitle">ثلث الليل</h2>
+      </div>
+
+      <!-- Night Mode Toggle -->
+      <div class="mb-5 rounded-xl border border-brand-100 bg-brand-50/60 p-4">
+        <div class="flex items-center justify-between gap-4">
+          <div class="min-w-0 flex-1">
+            <p class="text-sm font-semibold text-brand-900" data-i18n="nightModeLabel">طريقة حساب الليل</p>
+            <p id="nightModeDescription" class="mt-0.5 text-xs text-slate-500" data-i18n="nightModeMaghrib">من المغرب اليوم إلى الفجر غداً</p>
+          </div>
+          <button
+            id="nightModeToggle"
+            type="button"
+            role="switch"
+            aria-checked="false"
+            class="toggle-track relative h-7 w-12 shrink-0 rounded-full focus:outline-none focus:ring-2 focus:ring-brand-300 focus:ring-offset-2"
+            data-on="false"
+            aria-label="Toggle night calculation mode"
+          >
+            <span class="toggle-thumb absolute start-1 top-1 h-5 w-5 rounded-full bg-white shadow-sm"></span>
+          </button>
+        </div>
+        <p class="mt-2 text-[11px] leading-relaxed text-slate-400" data-i18n="nightModeHint">عطّل: المغرب → الفجر | فعّل: العشاء → الفجر</p>
+      </div>
+
+      <!-- Key Results -->
+      <div id="nightKeyResults" class="mb-4 space-y-3"></div>
+
+      <!-- Duration Breakdown -->
+      <div id="nightDurationGrid" class="grid grid-cols-2 gap-2"></div>
+    </section>
+
+    <footer class="mt-auto pt-8 text-center">
+      <p class="text-xs text-slate-400" data-i18n="footerText">تطبيق مجاني — يعمل بالكامل على جهازك</p>
+    </footer>
+  </div>
+
+  <script>
+/**
+ * Thuluth Meeting — Standalone PWA Single-File Version
+ * Phase 1–3 + PWA: manifest, service worker, install prompt, iOS meta tags
+ */
+
+'use strict';
+
+// ---------------------------------------------------------------------------
+// Localization
+// ---------------------------------------------------------------------------
+
+const STRINGS = {
+  ar: {
+    appTitle: 'اجتماع الثلث',
+    appSubtitle: 'حساب ثلث الليل ونصف الليل',
+    locationTitle: 'اختر موقعك',
+    countryLabel: 'الدولة',
+    countryPlaceholder: '— اختر الدولة —',
+    cityLabel: 'المدينة',
+    citySearchPlaceholder: 'ابحث عن مدينتك...',
+    cityHint: 'اختر مدينة من القائمة أدناه',
+    selectedLocationLabel: 'الموقع المحدد',
+    prayerTimesTitle: 'أوقات الصلاة',
+    loadingPrayerTimes: 'جاري تحميل أوقات الصلاة...',
+    retryButton: 'إعادة المحاولة',
+    todayLabel: 'اليوم',
+    tomorrowLabel: 'غداً',
+    errorFetchFailed: 'تعذر تحميل أوقات الصلاة. تحقق من الاتصال وحاول مرة أخرى.',
+    errorInvalidLocation: 'لم يتم العثور على أوقات الصلاة لهذا الموقع. جرّب مدينة أخرى.',
+    refreshPrayerTimes: 'تحديث الأوقات',
+    prayerFajr: 'الفجر',
+    prayerDhuhr: 'الظهر',
+    prayerAsr: 'العصر',
+    prayerMaghrib: 'المغرب',
+    prayerIsha: 'العشاء',
+    nightCalcTitle: 'ثلث الليل',
+    nightModeLabel: 'طريقة حساب الليل',
+    nightModeMaghrib: 'من المغرب اليوم إلى الفجر غداً',
+    nightModeIsha: 'من العشاء اليوم إلى الفجر غداً',
+    nightModeHint: 'عطّل: المغرب → الفجر | فعّل: العشاء → الفجر',
+    nightTotal: 'مدة الليل الكاملة',
+    nightOneThird: 'ثلث الليل',
+    nightHalf: 'نصف الليل (المدة)',
+    nightTwoThirds: 'ثلثا الليل',
+    islamicMidnight: 'نصف الليل الشرعي',
+    lastThirdStart: 'بداية الثلث الأخير',
+    islamicMidnightHint: 'وقت انتهاء النصف الأول من الليل',
+    lastThirdStartHint: 'وقت بداية الثلث الأخير — للتهجد والقيام',
+    footerText: 'تطبيق مجاني — يعمل بالكامل على جهازك',
+    langToggleLabel: 'EN',
+    pageTitle: 'اجتماع الثلث | Thuluth Meeting',
+    noCitiesFound: 'لا توجد مدن مطابقة',
+    selectCountryFirst: 'اختر الدولة أولاً',
+    installApp: 'تثبيت التطبيق',
+    installTitle: 'ثبّت التطبيق على جهازك',
+    installIosHint: 'اضغط «مشاركة» ثم «إضافة إلى الشاشة الرئيسية»',
+    installDismissLabel: 'إغلاق',
+  },
+  en: {
+    appTitle: 'Thuluth Meeting',
+    appSubtitle: 'Islamic night thirds & midnight',
+    locationTitle: 'Select your location',
+    countryLabel: 'Country',
+    countryPlaceholder: '— Select country —',
+    cityLabel: 'City',
+    citySearchPlaceholder: 'Search for your city...',
+    cityHint: 'Choose a city from the list below',
+    selectedLocationLabel: 'Selected location',
+    prayerTimesTitle: 'Prayer Times',
+    loadingPrayerTimes: 'Loading prayer times...',
+    retryButton: 'Try again',
+    todayLabel: 'Today',
+    tomorrowLabel: 'Tomorrow',
+    errorFetchFailed: 'Could not load prayer times. Check your connection and try again.',
+    errorInvalidLocation: 'Prayer times not found for this location. Try another city.',
+    refreshPrayerTimes: 'Refresh times',
+    prayerFajr: 'Fajr',
+    prayerDhuhr: 'Dhuhr',
+    prayerAsr: 'Asr',
+    prayerMaghrib: 'Maghrib',
+    prayerIsha: 'Isha',
+    nightCalcTitle: 'Night Thirds',
+    nightModeLabel: 'Night calculation mode',
+    nightModeMaghrib: 'From today\'s Maghrib to tomorrow\'s Fajr',
+    nightModeIsha: 'From today\'s Isha to tomorrow\'s Fajr',
+    nightModeHint: 'OFF: Maghrib → Fajr | ON: Isha → Fajr',
+    nightTotal: 'Total night duration',
+    nightOneThird: 'One third of the night',
+    nightHalf: 'Half of the night (duration)',
+    nightTwoThirds: 'Two thirds of the night',
+    islamicMidnight: 'Islamic Midnight',
+    lastThirdStart: 'Start of Last Third',
+    islamicMidnightHint: 'When the first half of the night ends',
+    lastThirdStartHint: 'Start of the final third — for Tahajjud/Qiyam',
+    footerText: 'Free app — runs entirely on your device',
+    langToggleLabel: 'عربي',
+    pageTitle: 'Thuluth Meeting | اجتماع الثلث',
+    noCitiesFound: 'No matching cities',
+    selectCountryFirst: 'Select a country first',
+    installApp: 'Install App',
+    installTitle: 'Install on your device',
+    installIosHint: 'Tap Share, then "Add to Home Screen"',
+    installDismissLabel: 'Dismiss',
+  },
+};
+
+const STORAGE_KEYS = {
+  language: 'iqraa_lang',
+  country: 'iqraa_country',
+  city: 'iqraa_city',
+  nightModeIsha: 'iqraa_night_isha',
+  installDismissed: 'iqraa_install_dismissed',
+};
+
+// ---------------------------------------------------------------------------
+// PWA (Progressive Web App)
+// ---------------------------------------------------------------------------
+
+const PWA_THEME_COLOR = '#0f766e';
+const PWA_BG_COLOR = '#f0fdfa';
+
+let deferredInstallPrompt = null;
+let manifestBlobUrl = null;
+const pwaIconUrls = { 192: '', 512: '' };
+
+function isStandaloneDisplay() {
+  return (
+    window.matchMedia('(display-mode: standalone)').matches
+    || window.matchMedia('(display-mode: fullscreen)').matches
+    || navigator.standalone === true
+  );
+}
+
+function isIosDevice() {
+  return (
+    /iPhone|iPad|iPod/i.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  );
+}
+
+function isIosSafari() {
+  if (!isIosDevice()) return false;
+  const ua = navigator.userAgent;
+  return /Safari/i.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS/i.test(ua);
+}
+
+function createAppIconDataUrl(size) {
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const radius = size * 0.22;
+
+  ctx.fillStyle = PWA_THEME_COLOR;
+  if (typeof ctx.roundRect === 'function') {
+    ctx.beginPath();
+    ctx.roundRect(0, 0, size, size, radius);
+    ctx.fill();
+  } else {
+    ctx.fillRect(0, 0, size, size);
+  }
+
+  const cx = size * 0.5;
+  const cy = size * 0.48;
+  const moonR = size * 0.22;
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(cx, cy, moonR, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = PWA_THEME_COLOR;
+  ctx.beginPath();
+  ctx.arc(cx + moonR * 0.35, cy - moonR * 0.15, moonR * 0.85, 0, Math.PI * 2);
+  ctx.fill();
+
+  return canvas.toDataURL('image/png');
+}
+
+function injectManifest() {
+  const startUrl = new URL('.', window.location.href).href;
+  const manifest = {
+    name: 'Islamic Night Calculator',
+    short_name: 'Night Calc',
+    description: 'Calculate Islamic night thirds and midnight from prayer times',
+    start_url: startUrl,
+    scope: startUrl,
+    display: 'standalone',
+    orientation: 'portrait-primary',
+    background_color: PWA_BG_COLOR,
+    theme_color: PWA_THEME_COLOR,
+    icons: [
+      { src: pwaIconUrls[192], sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: pwaIconUrls[512], sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: pwaIconUrls[192], sizes: '192x192', type: 'image/png', purpose: 'maskable' },
+      { src: pwaIconUrls[512], sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+    ],
+  };
+
+  if (manifestBlobUrl) {
+    URL.revokeObjectURL(manifestBlobUrl);
+  }
+
+  const blob = new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' });
+  manifestBlobUrl = URL.createObjectURL(blob);
+
+  let link = document.querySelector('link[rel="manifest"]');
+  if (!link) {
+    link = document.createElement('link');
+    link.rel = 'manifest';
+    document.head.appendChild(link);
+  }
+  link.href = manifestBlobUrl;
+}
+
+function injectAppleTouchIcon() {
+  let link = document.querySelector('link[rel="apple-touch-icon"]');
+  if (!link) {
+    link = document.createElement('link');
+    link.rel = 'apple-touch-icon';
+    document.head.appendChild(link);
+  }
+  link.href = pwaIconUrls[192];
+}
+
+async function registerServiceWorker() {
+  if (!('serviceWorker' in navigator) || window.location.protocol === 'file:') {
+    return;
+  }
+
+  const swCode = `
+self.addEventListener('install', (event) => { self.skipWaiting(); });
+self.addEventListener('activate', (event) => {
+  event.waitUntil(self.clients.claim());
+});
+self.addEventListener('fetch', (event) => {
+  event.respondWith(fetch(event.request));
+});
+`;
+
+  try {
+    const blob = new Blob([swCode], { type: 'application/javascript' });
+    const swUrl = URL.createObjectURL(blob);
+    await navigator.serviceWorker.register(swUrl);
+  } catch (err) {
+    console.warn('Service worker registration failed:', err);
+  }
+}
+
+function hideInstallBanner() {
+  if (dom.installBanner) {
+    dom.installBanner.classList.add('hidden');
+  }
+}
+
+function updateInstallBannerVisibility() {
+  if (!dom.installBanner) return;
+
+  if (isStandaloneDisplay()) {
+    hideInstallBanner();
+    return;
+  }
+
+  if (localStorage.getItem(STORAGE_KEYS.installDismissed) === '1') {
+    hideInstallBanner();
+    return;
+  }
+
+  const showForPrompt = Boolean(deferredInstallPrompt);
+  const showForIos = isIosSafari() && !showForPrompt;
+
+  if (showForPrompt || showForIos) {
+    dom.installBanner.classList.remove('hidden');
+    if (dom.installIosHint) {
+      dom.installIosHint.classList.toggle('hidden', !showForIos);
+    }
+  } else {
+    hideInstallBanner();
+  }
+}
+
+async function onInstallClick() {
+  if (deferredInstallPrompt) {
+    deferredInstallPrompt.prompt();
+    const { outcome } = await deferredInstallPrompt.userChoice;
+    deferredInstallPrompt = null;
+    if (outcome === 'accepted') {
+      hideInstallBanner();
+    }
+    updateInstallBannerVisibility();
+    return;
+  }
+
+  if (isIosSafari() && dom.installIosHint) {
+    dom.installIosHint.classList.remove('hidden');
+    dom.installBanner?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+}
+
+function onInstallDismiss() {
+  localStorage.setItem(STORAGE_KEYS.installDismissed, '1');
+  hideInstallBanner();
+}
+
+function initPWA() {
+  pwaIconUrls[192] = createAppIconDataUrl(192);
+  pwaIconUrls[512] = createAppIconDataUrl(512);
+  injectManifest();
+  injectAppleTouchIcon();
+  registerServiceWorker();
+
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    updateInstallBannerVisibility();
+  });
+
+  window.addEventListener('appinstalled', () => {
+    deferredInstallPrompt = null;
+    hideInstallBanner();
+  });
+
+  if (isIosSafari() && !isStandaloneDisplay()) {
+    setTimeout(updateInstallBannerVisibility, 600);
+  }
+
+  updateInstallBannerVisibility();
+}
+
+const API_BASE = 'https://api.aladhan.com/v1/timingsByCity';
+const PRAYER_KEYS = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
+
+// Aladhan calculation methods — https://aladhan.com/calculation-methods
+const COUNTRY_METHOD = {
+  'Egypt': 5,                      // Egyptian General Authority of Survey
+  'Saudi Arabia': 4,               // Umm Al-Qura
+  'United Arab Emirates': 8,     // Gulf Region
+  'Kuwait': 9,
+  'Qatar': 10,
+  'Bahrain': 8,
+  'Oman': 8,
+  'Singapore': 11,
+  'France': 12,
+  'Turkey': 13,
+  'Russia': 14,
+  'Pakistan': 1,                   // University of Islamic Sciences, Karachi
+  'India': 1,
+  'Bangladesh': 1,
+  'Afghanistan': 1,
+  'United States': 2,              // ISNA
+  'Canada': 2,
+  'Iran': 7,
+};
+const DEFAULT_METHOD = 3; // Muslim World League
+
+const PRAYER_I18N_KEYS = {
+  Fajr: 'prayerFajr',
+  Dhuhr: 'prayerDhuhr',
+  Asr: 'prayerAsr',
+  Maghrib: 'prayerMaghrib',
+  Isha: 'prayerIsha',
+};
+
+// ---------------------------------------------------------------------------
+// Locations (Aladhan API: city + country parameters)
+// ---------------------------------------------------------------------------
+
+const LOCATIONS = [
+  { country: 'Saudi Arabia', cities: ['Riyadh', 'Jeddah', 'Makkah', 'Madinah', 'Dammam', 'Tabuk', 'Abha', 'Buraidah'] },
+  { country: 'United Arab Emirates', cities: ['Dubai', 'Abu Dhabi', 'Sharjah', 'Ajman', 'Al Ain'] },
+  { country: 'Qatar', cities: ['Doha', 'Al Wakrah', 'Al Khor'] },
+  { country: 'Kuwait', cities: ['Kuwait City', 'Hawalli', 'Salmiya'] },
+  { country: 'Bahrain', cities: ['Manama', 'Muharraq', 'Riffa'] },
+  { country: 'Oman', cities: ['Muscat', 'Salalah', 'Sohar', 'Nizwa'] },
+  { country: 'Yemen', cities: ['Sanaa', 'Aden', 'Taiz', 'Hodeidah'] },
+  { country: 'Iraq', cities: ['Baghdad', 'Basra', 'Mosul', 'Erbil', 'Najaf', 'Karbala'] },
+  { country: 'Syria', cities: ['Damascus', 'Aleppo', 'Homs', 'Latakia'] },
+  { country: 'Jordan', cities: ['Amman', 'Zarqa', 'Irbid', 'Aqaba'] },
+  { country: 'Lebanon', cities: ['Beirut', 'Tripoli', 'Sidon', 'Tyre'] },
+  { country: 'Palestine', cities: ['Jerusalem', 'Gaza', 'Ramallah', 'Nablus', 'Hebron'] },
+  { country: 'Egypt', cities: ['Cairo', 'Alexandria', 'Giza', 'Luxor', 'Aswan', 'Tanta', 'Mansoura'] },
+  { country: 'Libya', cities: ['Tripoli', 'Benghazi', 'Misrata'] },
+  { country: 'Tunisia', cities: ['Tunis', 'Sfax', 'Sousse', 'Kairouan'] },
+  { country: 'Algeria', cities: ['Algiers', 'Oran', 'Constantine', 'Annaba'] },
+  { country: 'Morocco', cities: ['Casablanca', 'Rabat', 'Marrakech', 'Fes', 'Tangier', 'Agadir'] },
+  { country: 'Sudan', cities: ['Khartoum', 'Omdurman', 'Port Sudan'] },
+  { country: 'Somalia', cities: ['Mogadishu', 'Hargeisa', 'Kismayo'] },
+  { country: 'Turkey', cities: ['Istanbul', 'Ankara', 'Izmir', 'Bursa', 'Antalya', 'Konya'] },
+  { country: 'Iran', cities: ['Tehran', 'Mashhad', 'Isfahan', 'Shiraz', 'Tabriz'] },
+  { country: 'Pakistan', cities: ['Karachi', 'Lahore', 'Islamabad', 'Rawalpindi', 'Peshawar', 'Multan', 'Quetta'] },
+  { country: 'India', cities: ['Mumbai', 'Delhi', 'Hyderabad', 'Lucknow', 'Bhopal', 'Srinagar', 'Ahmedabad'] },
+  { country: 'Bangladesh', cities: ['Dhaka', 'Chittagong', 'Sylhet', 'Rajshahi'] },
+  { country: 'Afghanistan', cities: ['Kabul', 'Kandahar', 'Herat', 'Mazar-i-Sharif'] },
+  { country: 'Malaysia', cities: ['Kuala Lumpur', 'George Town', 'Johor Bahru', 'Kota Kinabalu'] },
+  { country: 'Indonesia', cities: ['Jakarta', 'Surabaya', 'Bandung', 'Medan', 'Makassar', 'Aceh'] },
+  { country: 'Brunei', cities: ['Bandar Seri Begawan'] },
+  { country: 'Singapore', cities: ['Singapore'] },
+  { country: 'Thailand', cities: ['Bangkok', 'Pattani', 'Yala'] },
+  { country: 'Philippines', cities: ['Manila', 'Marawi', 'Cotabato'] },
+  { country: 'Nigeria', cities: ['Lagos', 'Kano', 'Abuja', 'Ibadan', 'Kaduna'] },
+  { country: 'Senegal', cities: ['Dakar', 'Touba', 'Thies'] },
+  { country: 'Mali', cities: ['Bamako', 'Timbuktu', 'Gao'] },
+  { country: 'United Kingdom', cities: ['London', 'Birmingham', 'Manchester', 'Bradford', 'Leicester', 'Glasgow'] },
+  { country: 'United States', cities: ['New York', 'Los Angeles', 'Chicago', 'Houston', 'Dearborn', 'Dallas', 'Washington'] },
+  { country: 'Canada', cities: ['Toronto', 'Montreal', 'Vancouver', 'Ottawa', 'Calgary', 'Edmonton'] },
+  { country: 'France', cities: ['Paris', 'Marseille', 'Lyon', 'Lille'] },
+  { country: 'Germany', cities: ['Berlin', 'Munich', 'Frankfurt', 'Cologne', 'Hamburg'] },
+  { country: 'Netherlands', cities: ['Amsterdam', 'Rotterdam', 'The Hague', 'Utrecht'] },
+  { country: 'Belgium', cities: ['Brussels', 'Antwerp', 'Ghent'] },
+  { country: 'Sweden', cities: ['Stockholm', 'Gothenburg', 'Malmo'] },
+  { country: 'Norway', cities: ['Oslo', 'Bergen', 'Trondheim'] },
+  { country: 'Australia', cities: ['Sydney', 'Melbourne', 'Brisbane', 'Perth', 'Adelaide'] },
+  { country: 'New Zealand', cities: ['Auckland', 'Wellington', 'Christchurch'] },
+  { country: 'South Africa', cities: ['Johannesburg', 'Cape Town', 'Durban', 'Pretoria'] },
+  { country: 'Kenya', cities: ['Nairobi', 'Mombasa', 'Kisumu'] },
+  { country: 'Tanzania', cities: ['Dar es Salaam', 'Zanzibar City', 'Dodoma'] },
+  { country: 'Albania', cities: ['Tirana', 'Durres', 'Shkoder'] },
+  { country: 'Bosnia and Herzegovina', cities: ['Sarajevo', 'Mostar', 'Tuzla'] },
+  { country: 'Kosovo', cities: ['Pristina', 'Prizren', 'Peja'] },
+  { country: 'Russia', cities: ['Moscow', 'Kazan', 'Ufa', 'Makhachkala'] },
+  { country: 'China', cities: ['Beijing', 'Shanghai', 'Guangzhou', 'Urumqi', 'Xian'] },
+  { country: 'Japan', cities: ['Tokyo', 'Osaka', 'Yokohama'] },
+  { country: 'South Korea', cities: ['Seoul', 'Busan', 'Incheon'] },
+];
+
+// Remove duplicate Morocco entry (empty cities array was a mistake)
+const LOCATIONS_CLEAN = LOCATIONS.filter(
+  (entry, index, arr) =>
+    entry.cities.length > 0 &&
+    arr.findIndex((e) => e.country === entry.country) === index
+);
+
+// Sort countries alphabetically
+const SORTED_LOCATIONS = [...LOCATIONS_CLEAN].sort((a, b) =>
+  a.country.localeCompare(b.country)
+);
+
+// ---------------------------------------------------------------------------
+// App State
+// ---------------------------------------------------------------------------
+
+const state = {
+  lang: 'ar',
+  country: '',
+  city: '',
+  prayerTimes: {
+    loading: false,
+    errorKey: null,
+    today: null,
+    tomorrow: null,
+  },
+  nightModeIsha: false,
+  nightCalc: null,
+};
+
+let fetchAbortController = null;
+
+// ---------------------------------------------------------------------------
+// DOM References
+// ---------------------------------------------------------------------------
+
+const dom = {};
+
+function cacheDom() {
+  dom.html = document.documentElement;
+  dom.langToggle = document.getElementById('langToggle');
+  dom.langToggleLabel = document.getElementById('langToggleLabel');
+  dom.countrySelect = document.getElementById('countrySelect');
+  dom.citySearch = document.getElementById('citySearch');
+  dom.citySelect = document.getElementById('citySelect');
+  dom.cityHint = document.getElementById('cityHint');
+  dom.selectedLocation = document.getElementById('selectedLocation');
+  dom.selectedLocationText = document.getElementById('selectedLocationText');
+  dom.prayerTimesSection = document.getElementById('prayerTimesSection');
+  dom.prayerLoading = document.getElementById('prayerLoading');
+  dom.prayerError = document.getElementById('prayerError');
+  dom.prayerErrorMessage = document.getElementById('prayerErrorMessage');
+  dom.prayerRetryBtn = document.getElementById('prayerRetryBtn');
+  dom.prayerRefreshBtn = document.getElementById('prayerRefreshBtn');
+  dom.prayerData = document.getElementById('prayerData');
+  dom.todayPrayers = document.getElementById('todayPrayers');
+  dom.tomorrowPrayers = document.getElementById('tomorrowPrayers');
+  dom.nightCalcSection = document.getElementById('nightCalcSection');
+  dom.nightModeToggle = document.getElementById('nightModeToggle');
+  dom.nightModeDescription = document.getElementById('nightModeDescription');
+  dom.nightKeyResults = document.getElementById('nightKeyResults');
+  dom.nightDurationGrid = document.getElementById('nightDurationGrid');
+  dom.installBanner = document.getElementById('installBanner');
+  dom.installAppBtn = document.getElementById('installAppBtn');
+  dom.installDismissBtn = document.getElementById('installDismissBtn');
+  dom.installIosHint = document.getElementById('installIosHint');
+}
+
+// ---------------------------------------------------------------------------
+// i18n
+// ---------------------------------------------------------------------------
+
+function t(key) {
+  return STRINGS[state.lang][key] ?? STRINGS.en[key] ?? key;
+}
+
+function getPrayerErrorMessage(errorKey) {
+  return errorKey === 'invalid' ? t('errorInvalidLocation') : t('errorFetchFailed');
+}
+
+function applyLanguage(lang) {
+  state.lang = lang;
+  const isRtl = lang === 'ar';
+
+  dom.html.lang = lang;
+  dom.html.dir = isRtl ? 'rtl' : 'ltr';
+  document.body.setAttribute('dir', dom.html.dir);
+  document.body.style.fontFamily = isRtl ? "'Cairo', sans-serif" : "'Inter', sans-serif";
+  document.title = t('pageTitle');
+  dom.langToggleLabel.textContent = t('langToggleLabel');
+  dom.langToggle.setAttribute('aria-label', isRtl ? 'Switch to English' : 'التبديل إلى العربية');
+
+  document.querySelectorAll('[data-i18n]').forEach((el) => {
+    const key = el.getAttribute('data-i18n');
+    if (STRINGS[lang][key]) {
+      el.textContent = STRINGS[lang][key];
+    }
+  });
+
+  if (dom.citySearch) {
+    dom.citySearch.placeholder = t('citySearchPlaceholder');
+  }
+
+  rebuildCountryOptions();
+  if (state.country) {
+    populateCities(state.country);
+  }
+
+  updateSelectedLocationDisplay();
+
+  if (state.prayerTimes.today) {
+    renderPrayerTimes();
+    renderNightCalc();
+  } else if (state.prayerTimes.errorKey && dom.prayerErrorMessage) {
+    dom.prayerErrorMessage.textContent = getPrayerErrorMessage(state.prayerTimes.errorKey);
+  }
+
+  if (dom.prayerRefreshBtn) {
+    dom.prayerRefreshBtn.setAttribute('aria-label', t('refreshPrayerTimes'));
+  }
+
+  updateNightModeUI();
+  updateInstallBannerVisibility();
+
+  if (dom.installDismissBtn) {
+    dom.installDismissBtn.setAttribute('aria-label', t('installDismissLabel'));
+  }
+
+  localStorage.setItem(STORAGE_KEYS.language, lang);
+}
+
+function toggleLanguage() {
+  applyLanguage(state.lang === 'ar' ? 'en' : 'ar');
+}
+
+// ---------------------------------------------------------------------------
+// Location UI
+// ---------------------------------------------------------------------------
+
+function rebuildCountryOptions() {
+  const select = dom.countrySelect;
+  const current = state.country;
+  const placeholder = t('countryPlaceholder');
+
+  select.innerHTML = '';
+  const defaultOpt = document.createElement('option');
+  defaultOpt.value = '';
+  defaultOpt.textContent = placeholder;
+  select.appendChild(defaultOpt);
+
+  SORTED_LOCATIONS.forEach(({ country }) => {
+    const opt = document.createElement('option');
+    opt.value = country;
+    opt.textContent = country;
+    select.appendChild(opt);
+  });
+
+  if (current && SORTED_LOCATIONS.some((l) => l.country === current)) {
+    select.value = current;
+  }
+}
+
+function getCitiesForCountry(country) {
+  const entry = SORTED_LOCATIONS.find((l) => l.country === country);
+  return entry ? [...entry.cities].sort((a, b) => a.localeCompare(b)) : [];
+}
+
+function populateCities(country, filter = '') {
+  const cities = getCitiesForCountry(country);
+  const query = filter.trim().toLowerCase();
+  const filtered = query
+    ? cities.filter((c) => c.toLowerCase().includes(query))
+    : cities;
+
+  dom.citySelect.innerHTML = '';
+
+  if (filtered.length === 0) {
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = query ? t('noCitiesFound') : t('selectCountryFirst');
+    opt.disabled = true;
+    dom.citySelect.appendChild(opt);
+    dom.citySelect.disabled = true;
+    return;
+  }
+
+  filtered.forEach((city) => {
+    const opt = document.createElement('option');
+    opt.value = city;
+    opt.textContent = city;
+    dom.citySelect.appendChild(opt);
+  });
+
+  dom.citySelect.disabled = false;
+
+  if (state.city && filtered.includes(state.city)) {
+    dom.citySelect.value = state.city;
+  } else if (filtered.length === 1) {
+    selectCity(filtered[0]);
+  }
+}
+
+function showCityControls(show) {
+  dom.citySearch.disabled = !show;
+  dom.citySelect.classList.toggle('hidden', !show);
+  dom.cityHint.classList.toggle('hidden', !show);
+
+  if (show) {
+    dom.citySelect.classList.remove('hidden');
+    dom.cityHint.classList.remove('hidden');
+  }
+}
+
+function onCountryChange() {
+  const country = dom.countrySelect.value;
+  state.country = country;
+  state.city = '';
+
+  dom.citySearch.value = '';
+  dom.selectedLocation.classList.add('hidden');
+
+  if (!country) {
+    showCityControls(false);
+    dom.citySelect.innerHTML = '';
+    dom.citySelect.disabled = true;
+    clearPrayerTimes();
+    localStorage.removeItem(STORAGE_KEYS.country);
+    localStorage.removeItem(STORAGE_KEYS.city);
+    return;
+  }
+
+  clearPrayerTimes();
+
+  showCityControls(true);
+  populateCities(country);
+  localStorage.setItem(STORAGE_KEYS.country, country);
+  localStorage.removeItem(STORAGE_KEYS.city);
+}
+
+function onCitySearchInput() {
+  if (!state.country) return;
+  populateCities(state.country, dom.citySearch.value);
+  dom.citySelect.classList.remove('hidden');
+}
+
+function selectCity(city) {
+  if (!city || !state.country) return;
+
+  state.city = city;
+  dom.citySelect.value = city;
+  dom.citySearch.value = city;
+
+  localStorage.setItem(STORAGE_KEYS.city, city);
+  updateSelectedLocationDisplay();
+  fetchPrayerTimes();
+}
+
+function onCitySelectChange() {
+  const city = dom.citySelect.value;
+  if (city) selectCity(city);
+}
+
+function updateSelectedLocationDisplay() {
+  if (!state.country || !state.city) {
+    dom.selectedLocation.classList.add('hidden');
+    return;
+  }
+
+  const separator = state.lang === 'ar' ? '، ' : ', ';
+  dom.selectedLocationText.textContent = `${state.city}${separator}${state.country}`;
+  dom.selectedLocation.classList.remove('hidden');
+}
+
+function restoreSavedLocation() {
+  const savedCountry = localStorage.getItem(STORAGE_KEYS.country);
+  const savedCity = localStorage.getItem(STORAGE_KEYS.city);
+
+  if (savedCountry && SORTED_LOCATIONS.some((l) => l.country === savedCountry)) {
+    dom.countrySelect.value = savedCountry;
+    state.country = savedCountry;
+    showCityControls(true);
+    populateCities(savedCountry);
+
+    if (savedCity && getCitiesForCountry(savedCountry).includes(savedCity)) {
+      selectCity(savedCity);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Prayer Times API (Phase 2)
+// ---------------------------------------------------------------------------
+
+function formatApiDate(date) {
+  const d = String(date.getDate()).padStart(2, '0');
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const y = date.getFullYear();
+  return `${d}-${m}-${y}`;
+}
+
+function parseGregorianDate(dateStr) {
+  const [d, m, y] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+function addOneDayGregorian(dateStr) {
+  const date = parseGregorianDate(dateStr);
+  date.setDate(date.getDate() + 1);
+  return formatApiDate(date);
+}
+
+function getCalculationMethod(country) {
+  return COUNTRY_METHOD[country] ?? DEFAULT_METHOD;
+}
+
+function cleanTime(timeStr) {
+  if (!timeStr) return '—';
+  return String(timeStr).split(' ')[0].trim();
+}
+
+function buildTimingsUrl(city, country, dateStr = null) {
+  const params = new URLSearchParams({
+    city,
+    country,
+    method: String(getCalculationMethod(country)),
+  });
+  // Aladhan expects DD-MM-YYYY in the URL path, not as a query parameter
+  const base = dateStr ? `${API_BASE}/${dateStr}` : API_BASE;
+  return `${base}?${params.toString()}`;
+}
+
+function parseDayPayload(json) {
+  if (!json || json.code !== 200 || !json.data?.timings) {
+    return null;
+  }
+
+  const { timings, date } = json.data;
+  const prayers = {};
+
+  PRAYER_KEYS.forEach((key) => {
+    prayers[key] = cleanTime(timings[key]);
+  });
+
+  const hijri = date.hijri;
+  const hijriLabel = hijri
+    ? state.lang === 'ar'
+      ? `${hijri.day} ${hijri.month.ar} ${hijri.year} هـ`
+      : `${hijri.day} ${hijri.month.en} ${hijri.year} AH`
+    : '';
+
+  return {
+    prayers,
+    readableDate: date.readable,
+    gregorian: date.gregorian?.date ?? '',
+    hijri: hijriLabel,
+  };
+}
+
+async function fetchTimingsForDate(city, country, dateStr, signal) {
+  const url = buildTimingsUrl(city, country, dateStr);
+  const response = await fetch(url, { signal });
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+
+  const json = await response.json();
+  const parsed = parseDayPayload(json);
+
+  if (!parsed) {
+    throw new Error('INVALID_RESPONSE');
+  }
+
+  return parsed;
+}
+
+function showPrayerSection() {
+  dom.prayerTimesSection.classList.remove('hidden');
+  dom.prayerTimesSection.removeAttribute('aria-hidden');
+}
+
+function hidePrayerSection() {
+  dom.prayerTimesSection.classList.add('hidden');
+  dom.prayerTimesSection.setAttribute('aria-hidden', 'true');
+}
+
+function setPrayerView(view) {
+  dom.prayerLoading.classList.toggle('hidden', view !== 'loading');
+  dom.prayerLoading.classList.toggle('flex', view === 'loading');
+  dom.prayerError.classList.toggle('hidden', view !== 'error');
+  dom.prayerData.classList.toggle('hidden', view !== 'data');
+  dom.prayerRefreshBtn.classList.toggle('hidden', view !== 'data');
+  dom.prayerRefreshBtn.classList.toggle('flex', view === 'data');
+}
+
+function clearPrayerTimes() {
+  if (fetchAbortController) {
+    fetchAbortController.abort();
+    fetchAbortController = null;
+  }
+
+  state.prayerTimes = {
+    loading: false,
+    errorKey: null,
+    today: null,
+    tomorrow: null,
+  };
+
+  hidePrayerSection();
+  setPrayerView('loading');
+  dom.todayPrayers.innerHTML = '';
+  dom.tomorrowPrayers.innerHTML = '';
+  clearNightCalc();
+}
+
+function renderPrayerDayCard(dayKey, dayData) {
+  const label = dayKey === 'today' ? t('todayLabel') : t('tomorrowLabel');
+  const rows = PRAYER_KEYS.map((key) => {
+    const name = t(PRAYER_I18N_KEYS[key]);
+    const time = dayData.prayers[key];
+    return `
+      <div class="flex items-center justify-between gap-2 border-b border-slate-100 py-2.5 last:border-0">
+        <span class="text-sm font-medium text-slate-600">${name}</span>
+        <span class="font-mono text-sm font-bold tabular-nums text-brand-800">${time}</span>
+      </div>
+    `;
+  }).join('');
+
+  const dateLine = [dayData.readableDate, dayData.hijri].filter(Boolean).join(' · ');
+
+  return `
+    <article class="rounded-xl border border-slate-100 bg-slate-50/80 p-4">
+      <div class="mb-3 flex items-start justify-between gap-2">
+        <h3 class="text-sm font-bold text-brand-900">${label}</h3>
+        <span class="rounded-lg bg-brand-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-700">${dayData.gregorian}</span>
+      </div>
+      <p class="mb-3 text-xs text-slate-500">${dateLine}</p>
+      <div>${rows}</div>
+    </article>
+  `;
+}
+
+function renderPrayerTimes() {
+  const { today, tomorrow } = state.prayerTimes;
+  if (!today || !tomorrow) return;
+
+  dom.todayPrayers.innerHTML = renderPrayerDayCard('today', today);
+  dom.tomorrowPrayers.innerHTML = renderPrayerDayCard('tomorrow', tomorrow);
+  setPrayerView('data');
+}
+
+async function fetchPrayerTimes() {
+  const { country, city } = state;
+  if (!country || !city) return;
+
+  if (fetchAbortController) {
+    fetchAbortController.abort();
+  }
+
+  fetchAbortController = new AbortController();
+  const { signal } = fetchAbortController;
+
+  state.prayerTimes.loading = true;
+  state.prayerTimes.errorKey = null;
+  showPrayerSection();
+  setPrayerView('loading');
+
+  try {
+    // Fetch today first (no date = city's local today). Tomorrow is derived from API date.
+    const todayData = await fetchTimingsForDate(city, country, null, signal);
+    if (signal.aborted) return;
+
+    const tomorrowDateStr = addOneDayGregorian(todayData.gregorian);
+    const tomorrowData = await fetchTimingsForDate(city, country, tomorrowDateStr, signal);
+    if (signal.aborted) return;
+
+    state.prayerTimes.today = todayData;
+    state.prayerTimes.tomorrow = tomorrowData;
+    state.prayerTimes.loading = false;
+    state.prayerTimes.errorKey = null;
+
+    renderPrayerTimes();
+    calculateAndRenderNight();
+  } catch (err) {
+    if (err.name === 'AbortError') return;
+
+    state.prayerTimes.loading = false;
+    state.prayerTimes.errorKey = err.message === 'INVALID_RESPONSE' ? 'invalid' : 'fetch';
+
+    dom.prayerErrorMessage.textContent = getPrayerErrorMessage(state.prayerTimes.errorKey);
+    setPrayerView('error');
+  } finally {
+    if (!signal.aborted) {
+      fetchAbortController = null;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Night Calculation (Phase 3)
+// ---------------------------------------------------------------------------
+
+function parseTimeOnDate(gregorianDateStr, timeStr) {
+  const [day, month, year] = gregorianDateStr.split('-').map(Number);
+  const [hours, minutes] = timeStr.split(':').map(Number);
+  return new Date(year, month - 1, day, hours, minutes, 0, 0);
+}
+
+function formatClockTime(date) {
+  const h = String(date.getHours()).padStart(2, '0');
+  const m = String(date.getMinutes()).padStart(2, '0');
+  return `${h}:${m}`;
+}
+
+function formatDuration(ms) {
+  const totalMinutes = Math.round(ms / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  if (state.lang === 'ar') {
+    return `${hours} س ${minutes} د`;
+  }
+  return `${hours}h ${minutes}m`;
+}
+
+function addMsToDate(date, ms) {
+  return new Date(date.getTime() + ms);
+}
+
+function calculateNightTimes(today, tomorrow, useIsha) {
+  const startKey = useIsha ? 'Isha' : 'Maghrib';
+  const nightStart = parseTimeOnDate(today.gregorian, today.prayers[startKey]);
+  const nightEnd = parseTimeOnDate(tomorrow.gregorian, tomorrow.prayers.Fajr);
+
+  let totalMs = nightEnd.getTime() - nightStart.getTime();
+  if (totalMs <= 0) {
+    totalMs += 24 * 60 * 60 * 1000;
+  }
+
+  const oneThirdMs = totalMs / 3;
+  const halfMs = totalMs / 2;
+  const twoThirdsMs = (2 * totalMs) / 3;
+
+  const islamicMidnight = addMsToDate(nightStart, halfMs);
+  const lastThirdStart = addMsToDate(nightStart, twoThirdsMs);
+
+  return {
+    mode: useIsha ? 'isha' : 'maghrib',
+    nightStart: formatClockTime(nightStart),
+    nightEnd: formatClockTime(nightEnd),
+    startKey,
+    totalMs,
+    oneThirdMs,
+    halfMs,
+    twoThirdsMs,
+    islamicMidnight: formatClockTime(islamicMidnight),
+    lastThirdStart: formatClockTime(lastThirdStart),
+  };
+}
+
+function updateNightModeUI() {
+  if (!dom.nightModeToggle) return;
+
+  const isOn = state.nightModeIsha;
+  dom.nightModeToggle.setAttribute('aria-checked', String(isOn));
+  dom.nightModeToggle.dataset.on = String(isOn);
+
+  if (dom.nightModeDescription) {
+    dom.nightModeDescription.textContent = t(isOn ? 'nightModeIsha' : 'nightModeMaghrib');
+  }
+
+  dom.nightModeToggle.setAttribute(
+    'aria-label',
+    state.lang === 'ar'
+      ? (isOn ? 'الوضع: العشاء إلى الفجر' : 'الوضع: المغرب إلى الفجر')
+      : (isOn ? 'Mode: Isha to Fajr' : 'Mode: Maghrib to Fajr')
+  );
+}
+
+function toggleNightMode() {
+  state.nightModeIsha = !state.nightModeIsha;
+  localStorage.setItem(STORAGE_KEYS.nightModeIsha, state.nightModeIsha ? '1' : '0');
+  updateNightModeUI();
+  calculateAndRenderNight();
+}
+
+function showNightCalcSection() {
+  dom.nightCalcSection.classList.remove('hidden');
+  dom.nightCalcSection.removeAttribute('aria-hidden');
+}
+
+function hideNightCalcSection() {
+  dom.nightCalcSection.classList.add('hidden');
+  dom.nightCalcSection.setAttribute('aria-hidden', 'true');
+}
+
+function clearNightCalc() {
+  state.nightCalc = null;
+  hideNightCalcSection();
+  if (dom.nightKeyResults) dom.nightKeyResults.innerHTML = '';
+  if (dom.nightDurationGrid) dom.nightDurationGrid.innerHTML = '';
+}
+
+function renderKeyResultCard(title, hint, time, highlight = false) {
+  const bg = highlight
+    ? 'border-brand-300 bg-gradient-to-br from-brand-700 to-brand-800 text-white'
+    : 'border-brand-200 bg-brand-50 text-brand-900';
+  const labelClass = highlight ? 'text-brand-100' : 'text-brand-600';
+  const hintClass = highlight ? 'text-brand-200' : 'text-slate-500';
+  const timeClass = highlight ? 'text-white' : 'text-brand-800';
+
+  return `
+    <article class="rounded-xl border p-4 shadow-soft ${bg}">
+      <p class="text-xs font-semibold ${labelClass}">${title}</p>
+      <p class="mt-2 font-mono text-3xl font-bold tabular-nums ${timeClass}">${time}</p>
+      <p class="mt-1.5 text-[11px] leading-relaxed ${hintClass}">${hint}</p>
+    </article>
+  `;
+}
+
+function renderDurationTile(label, duration) {
+  return `
+    <div class="rounded-xl border border-slate-100 bg-slate-50/80 px-3 py-3">
+      <p class="text-[11px] font-medium text-slate-500">${label}</p>
+      <p class="mt-1 font-mono text-sm font-bold tabular-nums text-brand-800">${duration}</p>
+    </div>
+  `;
+}
+
+function renderNightCalc() {
+  const calc = state.nightCalc;
+  if (!calc) return;
+
+  dom.nightKeyResults.innerHTML = [
+    renderKeyResultCard(t('islamicMidnight'), t('islamicMidnightHint'), calc.islamicMidnight, true),
+    renderKeyResultCard(t('lastThirdStart'), t('lastThirdStartHint'), calc.lastThirdStart, true),
+  ].join('');
+
+  dom.nightDurationGrid.innerHTML = [
+    renderDurationTile(t('nightTotal'), formatDuration(calc.totalMs)),
+    renderDurationTile(t('nightOneThird'), formatDuration(calc.oneThirdMs)),
+    renderDurationTile(t('nightHalf'), formatDuration(calc.halfMs)),
+    renderDurationTile(t('nightTwoThirds'), formatDuration(calc.twoThirdsMs)),
+  ].join('');
+
+  showNightCalcSection();
+}
+
+function calculateAndRenderNight() {
+  const { today, tomorrow } = state.prayerTimes;
+  if (!today || !tomorrow) {
+    clearNightCalc();
+    return;
+  }
+
+  state.nightCalc = calculateNightTimes(today, tomorrow, state.nightModeIsha);
+  renderNightCalc();
+}
+
+// ---------------------------------------------------------------------------
+// Init
+// ---------------------------------------------------------------------------
+
+function bindEvents() {
+  dom.langToggle.addEventListener('click', toggleLanguage);
+  dom.countrySelect.addEventListener('change', onCountryChange);
+  dom.citySearch.addEventListener('input', onCitySearchInput);
+  dom.citySearch.addEventListener('focus', () => {
+    if (state.country) dom.citySelect.classList.remove('hidden');
+  });
+  dom.citySelect.addEventListener('change', onCitySelectChange);
+  dom.citySelect.addEventListener('click', (e) => {
+    if (e.target.tagName === 'OPTION' && e.target.value) {
+      selectCity(e.target.value);
+    }
+  });
+
+  dom.prayerRetryBtn.addEventListener('click', fetchPrayerTimes);
+  dom.prayerRefreshBtn.addEventListener('click', fetchPrayerTimes);
+  dom.nightModeToggle.addEventListener('click', toggleNightMode);
+
+  if (dom.installAppBtn) {
+    dom.installAppBtn.addEventListener('click', onInstallClick);
+  }
+  if (dom.installDismissBtn) {
+    dom.installDismissBtn.addEventListener('click', onInstallDismiss);
+  }
+}
+
+function init() {
+  cacheDom();
+
+  const savedLang = localStorage.getItem(STORAGE_KEYS.language);
+  const initialLang = savedLang === 'en' ? 'en' : 'ar';
+  state.nightModeIsha = localStorage.getItem(STORAGE_KEYS.nightModeIsha) === '1';
+
+  bindEvents();
+  initPWA();
+  applyLanguage(initialLang);
+  updateNightModeUI();
+  restoreSavedLocation();
+
+  window.IqraaThuluth = {
+    getLocation: () => ({
+      country: state.country,
+      city: state.city,
+      lang: state.lang,
+    }),
+    getPrayerTimes: () => ({
+      today: state.prayerTimes.today,
+      tomorrow: state.prayerTimes.tomorrow,
+    }),
+    getNightCalc: () => state.nightCalc,
+    getState: () => ({ ...state }),
+    fetchPrayerTimes,
+    calculateAndRenderNight,
+    version: '1.3.0-pwa',
+  };
+}
+
+document.addEventListener('DOMContentLoaded', init);
+
+</script>
+</body>
+</html>

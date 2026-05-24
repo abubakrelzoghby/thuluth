@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="description" content="Calculate Islamic night thirds (Thuluth) and midnight based on prayer times">
+  <meta name="theme-color" content="#0f766e">
+  <title>اجتماع الثلث | Thuluth Meeting</title>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            arabic: ['Cairo', 'sans-serif'],
+            english: ['Inter', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              50: '#f0fdfa',
+              100: '#ccfbf1',
+              200: '#99f6e4',
+              300: '#5eead4',
+              400: '#2dd4bf',
+              500: '#14b8a6',
+              600: '#0d9488',
+              700: '#0f766e',
+              800: '#115e59',
+              900: '#134e4a',
+            },
+          },
+          boxShadow: {
+            card: '0 4px 24px -4px rgba(15, 118, 110, 0.12)',
+            soft: '0 2px 12px -2px rgba(0, 0, 0, 0.08)',
+          },
+        },
+      },
+    };
+  </script>
+
+  <style>
+    html {
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      font-family: 'Cairo', sans-serif;
+    }
+
+    select,
+    input[type="search"] {
+      appearance: none;
+      -webkit-appearance: none;
+    }
+
+    .select-field {
+      background-image: none;
+    }
+
+    #citySelect {
+      background-image: none;
+    }
+
+    html[dir="ltr"] body {
+      font-family: 'Inter', sans-serif;
+    }
+
+    #citySelect option {
+      padding: 0.5rem;
+    }
+
+    #citySelect:not(.hidden) {
+      display: block;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .spinner {
+      animation: spin 0.7s linear infinite;
+    }
+
+  /* Night mode toggle switch */
+  .toggle-track {
+    transition: background-color 0.2s ease;
+  }
+
+  .toggle-track[data-on="true"] {
+    background-color: #0f766e;
+  }
+
+  .toggle-track[data-on="false"] {
+    background-color: #cbd5e1;
+  }
+
+  .toggle-thumb {
+    transition: transform 0.2s ease;
+  }
+
+  html[dir="rtl"] .toggle-track[data-on="true"] .toggle-thumb {
+    transform: translateX(-1.25rem);
+  }
+
+  html[dir="ltr"] .toggle-track[data-on="true"] .toggle-thumb {
+    transform: translateX(1.25rem);
+  }
+  </style>
+</head>
+<body class="min-h-screen bg-gradient-to-b from-brand-50 via-white to-brand-50/30 text-slate-800 antialiased">
+
+  <div id="app" class="mx-auto flex min-h-screen max-w-md flex-col px-4 pb-8 pt-[max(1rem,env(safe-area-inset-top))]">
+
+    <!-- Header -->
+    <header class="mb-6 flex items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-brand-700 text-white shadow-soft">
+          <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+          </svg>
+        </div>
+        <div>
+          <h1 class="text-lg font-bold leading-tight text-brand-900" data-i18n="appTitle">اجتماع الثلث</h1>
+          <p class="text-xs text-slate-500" data-i18n="appSubtitle">حساب ثلث الليل ونصف الليل</p>
+        </div>
+      </div>
+
+      <button
+        id="langToggle"
+        type="button"
+        class="flex h-11 min-w-[4.5rem] shrink-0 items-center justify-center rounded-xl border border-brand-200 bg-white px-3 text-sm font-semibold text-brand-800 shadow-soft transition active:scale-95"
+        aria-label="Toggle language"
+      >
+        <span id="langToggleLabel">EN</span>
+      </button>
+    </header>
+
+    <!-- Location Card -->
+    <section class="mb-5 rounded-2xl border border-brand-100 bg-white p-5 shadow-card" aria-labelledby="locationHeading">
+      <div class="mb-4 flex items-center gap-2">
+        <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-100 text-brand-700">
+          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+          </svg>
+        </div>
+        <h2 id="locationHeading" class="text-base font-semibold text-brand-900" data-i18n="locationTitle">اختر موقعك</h2>
+      </div>
+
+      <!-- Country -->
+      <div class="mb-4">
+        <label for="countrySelect" class="mb-1.5 block text-sm font-medium text-slate-600" data-i18n="countryLabel">الدولة</label>
+        <div class="relative">
+          <select
+            id="countrySelect"
+            class="select-field w-full rounded-xl border border-slate-200 bg-slate-50 py-3 ps-4 pe-10 text-sm font-medium text-slate-800 outline-none transition focus:border-brand-400 focus:bg-white focus:ring-2 focus:ring-brand-200"
+          >
+            <option value="" data-i18n="countryPlaceholder">— اختر الدولة —</option>
+          </select>
+          <svg class="pointer-events-none absolute end-3 top-1/2 h-5 w-5 -translate-y-1/2 text-brand-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+          </svg>
+        </div>
+      </div>
+
+      <!-- City Search -->
+      <div class="mb-1">
+        <label for="citySearch" class="mb-1.5 block text-sm font-medium text-slate-600" data-i18n="cityLabel">المدينة</label>
+        <div class="relative">
+          <input
+            type="search"
+            id="citySearch"
+            disabled
+            autocomplete="off"
+            class="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 ps-10 pe-4 text-sm font-medium text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-brand-400 focus:bg-white focus:ring-2 focus:ring-brand-200 disabled:cursor-not-allowed disabled:opacity-50"
+            placeholder="ابحث عن مدينتك..."
+          />
+          <svg class="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+          </svg>
+        </div>
+      </div>
+
+      <!-- City List (searchable via filter) -->
+      <select
+        id="citySelect"
+        disabled
+        size="6"
+        class="mt-2 hidden w-full rounded-xl border border-slate-200 bg-white px-3 py-1 text-sm font-medium text-slate-800 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-200"
+        aria-label="City list"
+      ></select>
+
+      <p id="cityHint" class="mt-2 hidden text-xs text-slate-500" data-i18n="cityHint">اختر مدينة من القائمة أدناه</p>
+
+      <!-- Selected Location -->
+      <div id="selectedLocation" class="mt-4 hidden rounded-xl bg-brand-50 px-4 py-3">
+        <p class="text-xs font-medium text-brand-600" data-i18n="selectedLocationLabel">الموقع المحدد</p>
+        <p id="selectedLocationText" class="mt-0.5 text-sm font-semibold text-brand-900"></p>
+      </div>
+    </section>
+
+    <!-- Prayer Times (Phase 2) -->
+    <section
+      id="prayerTimesSection"
+      class="mb-5 hidden rounded-2xl border border-brand-100 bg-white p-5 shadow-card"
+      aria-labelledby="prayerTimesHeading"
+      aria-live="polite"
+    >
+      <div class="mb-4 flex items-center justify-between gap-2">
+        <div class="flex items-center gap-2">
+          <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-100 text-brand-700">
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+          </div>
+          <h2 id="prayerTimesHeading" class="text-base font-semibold text-brand-900" data-i18n="prayerTimesTitle">أوقات الصلاة</h2>
+        </div>
+        <button
+          id="prayerRefreshBtn"
+          type="button"
+          class="hidden h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-brand-200 text-brand-700 transition hover:bg-brand-50 active:scale-95"
+          aria-label="Refresh prayer times"
+        >
+          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Loading -->
+      <div id="prayerLoading" class="hidden flex flex-col items-center justify-center gap-3 py-8">
+        <div class="spinner h-9 w-9 rounded-full border-[3px] border-brand-200 border-t-brand-600" role="status" aria-hidden="true"></div>
+        <p class="text-sm font-medium text-slate-500" data-i18n="loadingPrayerTimes">جاري تحميل أوقات الصلاة...</p>
+      </div>
+
+      <!-- Error -->
+      <div id="prayerError" class="hidden rounded-xl border border-red-100 bg-red-50 p-4 text-center">
+        <p id="prayerErrorMessage" class="text-sm font-medium text-red-700"></p>
+        <button
+          id="prayerRetryBtn"
+          type="button"
+          class="mt-3 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition active:scale-95 hover:bg-red-700"
+          data-i18n="retryButton"
+        >
+          إعادة المحاولة
+        </button>
+      </div>
+
+      <!-- Prayer Times Data -->
+      <div id="prayerData" class="hidden space-y-4">
+        <div id="todayPrayers"></div>
+        <div id="tomorrowPrayers"></div>
+      </div>
+    </section>
+
+    <!-- Night Calculation (Phase 3) -->
+    <section
+      id="nightCalcSection"
+      class="mb-5 hidden rounded-2xl border border-brand-100 bg-white p-5 shadow-card"
+      aria-labelledby="nightCalcHeading"
+    >
+      <div class="mb-4 flex items-center gap-2">
+        <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-100 text-brand-700">
+          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+          </svg>
+        </div>
+        <h2 id="nightCalcHeading" class="text-base font-semibold text-brand-900" data-i18n="nightCalcTitle">ثلث الليل</h2>
+      </div>
+
+      <!-- Night Mode Toggle -->
+      <div class="mb-5 rounded-xl border border-brand-100 bg-brand-50/60 p-4">
+        <div class="flex items-center justify-between gap-4">
+          <div class="min-w-0 flex-1">
+            <p class="text-sm font-semibold text-brand-900" data-i18n="nightModeLabel">طريقة حساب الليل</p>
+            <p id="nightModeDescription" class="mt-0.5 text-xs text-slate-500" data-i18n="nightModeMaghrib">من المغرب اليوم إلى الفجر غداً</p>
+          </div>
+          <button
+            id="nightModeToggle"
+            type="button"
+            role="switch"
+            aria-checked="false"
+            class="toggle-track relative h-7 w-12 shrink-0 rounded-full focus:outline-none focus:ring-2 focus:ring-brand-300 focus:ring-offset-2"
+            data-on="false"
+            aria-label="Toggle night calculation mode"
+          >
+            <span class="toggle-thumb absolute start-1 top-1 h-5 w-5 rounded-full bg-white shadow-sm"></span>
+          </button>
+        </div>
+        <p class="mt-2 text-[11px] leading-relaxed text-slate-400" data-i18n="nightModeHint">عطّل: المغرب → الفجر | فعّل: العشاء → الفجر</p>
+      </div>
+
+      <!-- Key Results -->
+      <div id="nightKeyResults" class="mb-4 space-y-3"></div>
+
+      <!-- Duration Breakdown -->
+      <div id="nightDurationGrid" class="grid grid-cols-2 gap-2"></div>
+    </section>
+
+    <footer class="mt-auto pt-8 text-center">
+      <p class="text-xs text-slate-400" data-i18n="footerText">تطبيق مجاني — يعمل بالكامل على جهازك</p>
+    </footer>
+  </div>
+
+  <script src="app.js" defer></script>
+</body>
+</html>
