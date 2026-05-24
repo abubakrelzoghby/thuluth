@@ -147,6 +147,18 @@
       </button>
     </header>
 
+    <!-- Install (shown when browser fires beforeinstallprompt, or on iOS Safari) -->
+    <div id="installBanner" class="mb-4 hidden" role="region" aria-labelledby="installBannerTitle">
+      <div class="flex items-center gap-3 rounded-2xl border border-brand-200 bg-white/95 p-3.5 shadow-card">
+        <div class="min-w-0 flex-1">
+          <p id="installBannerTitle" class="text-sm font-semibold text-brand-900" data-i18n="installTitle">ثبّت التطبيق على جهازك</p>
+          <p id="installIosHint" class="mt-0.5 hidden text-xs text-slate-500" data-i18n="installIosHint">آيفون: اضغط «مشاركة» ثم «إضافة إلى الشاشة الرئيسية»</p>
+        </div>
+        <button id="installAppBtn" type="button" class="shrink-0 rounded-xl bg-brand-700 px-3 py-2 text-xs font-semibold text-white active:scale-95" data-i18n="installApp">تثبيت التطبيق</button>
+        <button id="installDismissBtn" type="button" class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100" aria-label="Close">×</button>
+      </div>
+    </div>
+
     <!-- Location Card -->
     <section class="mb-5 rounded-2xl border border-brand-100 bg-white p-5 shadow-card" aria-labelledby="locationHeading">
       <div class="mb-4 flex items-center gap-2">

@@ -52,6 +52,9 @@ const STRINGS = {
     pageTitle: 'اجتماع الثلث | Thuluth Meeting',
     noCitiesFound: 'لا توجد مدن مطابقة',
     selectCountryFirst: 'اختر الدولة أولاً',
+    installApp: 'تثبيت التطبيق',
+    installTitle: 'ثبّت التطبيق على جهازك',
+    installIosHint: 'آيفون: اضغط «مشاركة» ثم «إضافة إلى الشاشة الرئيسية»',
   },
   en: {
     appTitle: 'Thuluth Meeting',
@@ -95,6 +98,9 @@ const STRINGS = {
     pageTitle: 'Thuluth Meeting | اجتماع الثلث',
     noCitiesFound: 'No matching cities',
     selectCountryFirst: 'Select a country first',
+    installApp: 'Install App',
+    installTitle: 'Install on your device',
+    installIosHint: 'iPhone: Tap Share, then "Add to Home Screen"',
   },
 };
 
@@ -122,6 +128,8 @@ const PWA_MANIFEST_STRINGS = {
 };
 
 let manifestBlobUrl = null;
+let deferredInstallPrompt = null;
+let installBannerDismissedThisSession = false;
 
 const API_BASE = 'https://api.aladhan.com/v1/timingsByCity';
 const PRAYER_KEYS = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
@@ -281,6 +289,10 @@ function cacheDom() {
   dom.nightModeDescription = document.getElementById('nightModeDescription');
   dom.nightKeyResults = document.getElementById('nightKeyResults');
   dom.nightDurationGrid = document.getElementById('nightDurationGrid');
+  dom.installBanner = document.getElementById('installBanner');
+  dom.installAppBtn = document.getElementById('installAppBtn');
+  dom.installDismissBtn = document.getElementById('installDismissBtn');
+  dom.installIosHint = document.getElementById('installIosHint');
 }
 
 // ---------------------------------------------------------------------------
@@ -298,8 +310,92 @@ function getPrayerErrorMessage(errorKey) {
 }
 
 // ---------------------------------------------------------------------------
-// PWA — dynamic manifest (blob), service worker (native install; no custom UI)
+// PWA — manifest, service worker, optional install button (no localStorage hide)
 // ---------------------------------------------------------------------------
+
+function isStandaloneDisplay() {
+  return (
+    window.matchMedia('(display-mode: standalone)').matches
+    || window.matchMedia('(display-mode: fullscreen)').matches
+    || navigator.standalone === true
+  );
+}
+
+function isIosDevice() {
+  return (
+    /iPhone|iPad|iPod/i.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  );
+}
+
+function isIosSafari() {
+  if (!isIosDevice()) return false;
+  const ua = navigator.userAgent;
+  return /Safari/i.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS/i.test(ua);
+}
+
+function updateInstallBannerVisibility() {
+  if (!dom.installBanner) return;
+
+  if (isStandaloneDisplay() || installBannerDismissedThisSession) {
+    dom.installBanner.classList.add('hidden');
+    return;
+  }
+
+  const showForPrompt = Boolean(deferredInstallPrompt);
+  const showForIos = isIosSafari() && !showForPrompt;
+
+  if (showForPrompt || showForIos) {
+    dom.installBanner.classList.remove('hidden');
+    if (dom.installIosHint) {
+      dom.installIosHint.classList.toggle('hidden', !showForIos);
+    }
+  } else {
+    dom.installBanner.classList.add('hidden');
+  }
+}
+
+async function onInstallClick() {
+  if (deferredInstallPrompt) {
+    deferredInstallPrompt.prompt();
+    const { outcome } = await deferredInstallPrompt.userChoice;
+    deferredInstallPrompt = null;
+    if (outcome === 'accepted') {
+      dom.installBanner?.classList.add('hidden');
+    }
+    updateInstallBannerVisibility();
+    return;
+  }
+
+  if (isIosSafari() && dom.installIosHint) {
+    dom.installIosHint.classList.remove('hidden');
+    dom.installBanner?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+}
+
+function onInstallBannerDismiss() {
+  installBannerDismissedThisSession = true;
+  dom.installBanner?.classList.add('hidden');
+}
+
+function initPwaInstallUi() {
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    updateInstallBannerVisibility();
+  });
+
+  window.addEventListener('appinstalled', () => {
+    deferredInstallPrompt = null;
+    dom.installBanner?.classList.add('hidden');
+  });
+
+  if (isIosSafari() && !isStandaloneDisplay()) {
+    setTimeout(updateInstallBannerVisibility, 500);
+  }
+
+  updateInstallBannerVisibility();
+}
 
 /** Base path for deploy root or GitHub Pages subfolder (e.g. /thuluth/). */
 function getAppBasePath() {
@@ -429,6 +525,7 @@ function applyLanguage(lang) {
 
   updateNightModeUI();
   updateWebManifest(lang);
+  updateInstallBannerVisibility();
 
   localStorage.setItem(STORAGE_KEYS.language, lang);
 }
@@ -994,6 +1091,13 @@ function bindEvents() {
   dom.prayerRetryBtn.addEventListener('click', fetchPrayerTimes);
   dom.prayerRefreshBtn.addEventListener('click', fetchPrayerTimes);
   dom.nightModeToggle.addEventListener('click', toggleNightMode);
+
+  if (dom.installAppBtn) {
+    dom.installAppBtn.addEventListener('click', onInstallClick);
+  }
+  if (dom.installDismissBtn) {
+    dom.installDismissBtn.addEventListener('click', onInstallBannerDismiss);
+  }
 }
 
 async function init() {
@@ -1005,6 +1109,7 @@ async function init() {
 
   updateWebManifest(initialLang);
   await registerServiceWorker();
+  initPwaInstallUi();
   bindEvents();
   applyLanguage(initialLang);
   updateNightModeUI();
@@ -1032,7 +1137,7 @@ async function init() {
     calculateAndRenderNight,
     updateWebManifest,
     getAppBasePath,
-    version: '2.0.1-pwa',
+    version: '2.0.2-pwa',
   };
 
   // Backward-compatible debug alias
