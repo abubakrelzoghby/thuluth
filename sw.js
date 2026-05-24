@@ -5,7 +5,7 @@
 
 'use strict';
 
-const CACHE_VERSION = 'thuluth-meeting-v3';
+const CACHE_VERSION = 'thuluth-meeting-v4';
 const SW_BASE = new URL('.', self.location.href).href;
 
 const PRECACHE_URLS = [
