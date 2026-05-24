@@ -117,6 +117,9 @@ const STORAGE_KEYS = {
   nightModeIsha: 'iqraa_night_isha',
 };
 
+// Cached Fajr time per location + calendar date (for pre-Fajr day-boundary checks)
+const FAJR_CACHE_PREFIX = 'iqraa_fajr';
+
 // PWA install labels (home-screen name follows active UI language)
 const PWA_MANIFEST_STRINGS = {
   ar: {
@@ -815,6 +818,89 @@ function addOneDayGregorian(dateStr) {
   return formatApiDate(date);
 }
 
+function subtractOneDayGregorian(dateStr) {
+  const date = parseGregorianDate(dateStr);
+  date.setDate(date.getDate() - 1);
+  return formatApiDate(date);
+}
+
+/** Local system calendar date as DD-MM-YYYY (Aladhan API format). */
+function getLocalCalendarDateStr() {
+  return formatApiDate(new Date());
+}
+
+function getFajrCacheKey(country, city, dateStr) {
+  return `${FAJR_CACHE_PREFIX}_${country}_${city}_${dateStr}`;
+}
+
+function readFajrCache(country, city, dateStr) {
+  try {
+    return localStorage.getItem(getFajrCacheKey(country, city, dateStr));
+  } catch {
+    return null;
+  }
+}
+
+function writeFajrCache(country, city, dateStr, fajrTime) {
+  if (!fajrTime) return;
+  try {
+    localStorage.setItem(getFajrCacheKey(country, city, dateStr), fajrTime);
+  } catch {
+    // Storage full or unavailable — safe to continue without cache
+  }
+}
+
+/**
+ * True when local time is after midnight but still before Fajr on the calendar day.
+ * In that window the previous Gregorian date remains the operational "Today".
+ */
+function isBeforeFajrOnCalendarDay(now, calendarDateStr, fajrTimeStr) {
+  const fajrAt = parseTimeOnDate(calendarDateStr, fajrTimeStr);
+  return now.getTime() < fajrAt.getTime();
+}
+
+/**
+ * Resolve which Gregorian dates map to operational "Today" and "Tomorrow".
+ *
+ * Islamic day transition happens at Fajr, not at midnight:
+ * - After midnight, before today's Fajr → previous calendar day is "Today".
+ * - After today's Fajr (until next midnight) → current calendar day is "Today".
+ *
+ * Returns date strings plus optional prefetched data for the current calendar day.
+ */
+async function resolveOperationalDatePair(city, country, signal) {
+  const now = new Date();
+  const calendarTodayStr = getLocalCalendarDateStr();
+
+  // Step 1: need today's Fajr on the current calendar date (cache first, then API).
+  let calendarTodayData = null;
+  let fajrTime = readFajrCache(country, city, calendarTodayStr);
+
+  if (!fajrTime) {
+    calendarTodayData = await fetchTimingsForDate(city, country, calendarTodayStr, signal);
+    fajrTime = calendarTodayData.prayers.Fajr;
+    writeFajrCache(country, city, calendarTodayStr, fajrTime);
+  }
+
+  // Step 2: compare current clock time with calendar-day Fajr to pick the baseline date.
+  const beforeFajr = isBeforeFajrOnCalendarDay(now, calendarTodayStr, fajrTime);
+
+  let todayDateStr;
+  let tomorrowDateStr;
+
+  if (beforeFajr) {
+    // Scenario A: e.g. May 25 02:00 with Fajr at 04:00 → Today = May 24, Tomorrow = May 25.
+    todayDateStr = subtractOneDayGregorian(calendarTodayStr);
+    tomorrowDateStr = calendarTodayStr;
+  } else {
+    // Scenario B: e.g. May 25 05:00 after Fajr → Today = May 25, Tomorrow = May 26.
+    todayDateStr = calendarTodayStr;
+    tomorrowDateStr = addOneDayGregorian(calendarTodayStr);
+  }
+
+  return { todayDateStr, tomorrowDateStr, calendarTodayData };
+}
+
 function getCalculationMethod(country) {
   return COUNTRY_METHOD[country] ?? DEFAULT_METHOD;
 }
@@ -984,13 +1070,26 @@ async function fetchPrayerTimes() {
   }
 
   try {
-    // Fetch today first (no date = city's local today). Tomorrow is derived from API date.
-    const todayData = await fetchTimingsForDate(city, country, null, signal);
+    // Operational "Today"/"Tomorrow" follow Fajr, not midnight (see resolveOperationalDatePair).
+    const { todayDateStr, tomorrowDateStr, calendarTodayData } =
+      await resolveOperationalDatePair(city, country, signal);
     if (signal.aborted) return;
 
-    const tomorrowDateStr = addOneDayGregorian(todayData.gregorian);
-    const tomorrowData = await fetchTimingsForDate(city, country, tomorrowDateStr, signal);
+    const todayData =
+      calendarTodayData && calendarTodayData.gregorian === todayDateStr
+        ? calendarTodayData
+        : await fetchTimingsForDate(city, country, todayDateStr, signal);
     if (signal.aborted) return;
+
+    writeFajrCache(country, city, todayDateStr, todayData.prayers.Fajr);
+
+    const tomorrowData =
+      calendarTodayData && calendarTodayData.gregorian === tomorrowDateStr
+        ? calendarTodayData
+        : await fetchTimingsForDate(city, country, tomorrowDateStr, signal);
+    if (signal.aborted) return;
+
+    writeFajrCache(country, city, tomorrowDateStr, tomorrowData.prayers.Fajr);
 
     state.prayerTimes.today = todayData;
     state.prayerTimes.tomorrow = tomorrowData;
